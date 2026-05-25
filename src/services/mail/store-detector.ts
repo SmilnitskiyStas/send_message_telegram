@@ -1,0 +1,50 @@
+import { getDb } from '../../db';
+import { logger } from '../../utils/logger';
+import { Store } from '../../types';
+
+// "Encoding Device: 12-252 M-12 FR 02" → storeNumber="12", cameraNumber="252"
+export function parseEncodingDevice(body: string): { storeNumber: string | null; cameraNumber: string | null } {
+  const match = body.match(/Encoding Device\s*:\s*(\d+)-(\d+)/i);
+  return {
+    storeNumber: match?.[1] ?? null,
+    cameraNumber: match?.[2] ?? null,
+  };
+}
+
+export function detectStore(subject: string, textBody: string): Store | null {
+  const db = getDb();
+  const stores: Store[] = db.prepare('SELECT id, name, code, address FROM stores').all();
+
+  if (stores.length === 0) {
+    logger.warn('No stores in database — cannot detect store from email');
+    return null;
+  }
+
+  // Основний спосіб: числовий код магазину з поля "Encoding Device: 12-252 ..."
+  const { storeNumber } = parseEncodingDevice(textBody);
+  if (storeNumber) {
+    const byNumber = stores.find((s) => s.code === storeNumber);
+    if (byNumber) {
+      logger.info(
+        { storeId: byNumber.id, storeName: byNumber.name, storeNumber },
+        'Store detected by encoding device number',
+      );
+      return byNumber;
+    }
+  }
+
+  // Fallback: шукаємо назву або код у тексті листа
+  const lowerText = `${subject} ${textBody}`.toLowerCase();
+  for (const store of stores) {
+    if (lowerText.includes(store.name.toLowerCase()) || lowerText.includes(store.code.toLowerCase())) {
+      logger.info(
+        { storeId: store.id, storeName: store.name },
+        'Store detected by name/code in email text',
+      );
+      return store;
+    }
+  }
+
+  logger.warn({ subject, storeNumber }, 'Could not detect store from email');
+  return null;
+}

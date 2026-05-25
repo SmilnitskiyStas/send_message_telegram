@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Користувачі — Адмін</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<style>
+  body{background:#f0f2f5}
+  .sidebar{width:220px;min-height:100vh;background:#16213e;position:fixed;top:0;left:0;padding:20px 0}
+  .sidebar .brand{color:#fff;font-weight:700;font-size:1rem;padding:0 20px 20px;border-bottom:1px solid #ffffff22;margin-bottom:12px}
+  .sidebar .nav-link{padding:10px 20px;font-size:.9rem;border-radius:0}
+  .sidebar .nav-link.active{background:#0f3460;color:#fff!important;border-left:3px solid #e94560}
+  .main{margin-left:220px;padding:28px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="brand">🤖 Bot Admin</div>
+  <nav id="sidebar-nav" class="nav flex-column"></nav>
+  <div style="position:absolute;bottom:20px;width:100%;padding:0 12px">
+    <button class="btn btn-outline-danger btn-sm w-100" onclick="logout()">Вийти</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0 fw-bold">👥 Користувачі</h4>
+    <button class="btn btn-primary" onclick="openModal()">+ Додати</button>
+  </div>
+
+  <!-- Фільтри -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+      <div class="row g-2 align-items-center">
+        <div class="col-auto">
+          <select class="form-select form-select-sm" id="filterStore" onchange="loadUsers()">
+            <option value="">Всі магазини</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <select class="form-select form-select-sm" id="filterRole" onchange="loadUsers()">
+            <option value="">Всі ролі</option>
+            <option value="security">🛡 Безпека</option>
+            <option value="employee">👷 Співробітник</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <select class="form-select form-select-sm" id="filterActive" onchange="loadUsers()">
+            <option value="">Будь-який статус</option>
+            <option value="1">Активні</option>
+            <option value="0">Неактивні</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0" id="usersTable">
+        <thead class="table-light">
+          <tr><th>ПІБ</th><th>Посада</th><th>Магазин</th><th>Роль</th><th>Telegram</th><th>Сповіщення</th><th>Статус</th><th>Дії</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal форма користувача -->
+<div class="modal fade" id="userModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Користувач</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="userId">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Прізвище *</label>
+            <input type="text" class="form-control" id="lastName">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Ім'я *</label>
+            <input type="text" class="form-control" id="firstName">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">По батькові</label>
+            <input type="text" class="form-control" id="middleName">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Телефон *</label>
+            <input type="text" class="form-control" id="phone" placeholder="+380XXXXXXXXX">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Посада *</label>
+            <input type="text" class="form-control" id="position">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Магазин *</label>
+            <select class="form-select" id="storeId"></select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Роль *</label>
+            <select class="form-select" id="role" onchange="toggleReceiveAll()">
+              <option value="security">🛡 Служба безпеки</option>
+              <option value="employee">👷 Співробітник</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Статус</label>
+            <select class="form-select" id="isActive">
+              <option value="1">✅ Активний</option>
+              <option value="0">❌ Неактивний</option>
+            </select>
+          </div>
+          <div class="col-12" id="receiveAllRow">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="receiveAll" role="switch">
+              <label class="form-check-label fw-semibold" for="receiveAll">
+                🌐 Отримувати сповіщення з <b>усіх магазинів</b>
+                <span class="text-muted fw-normal small">(не лише зі свого)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div id="modalError" class="alert alert-danger d-none mt-3"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+        <button class="btn btn-primary" onclick="saveUser()">Зберегти</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal токен -->
+<div class="modal fade" id="tokenModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🔗 Посилання для реєстрації</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">Відправте це посилання користувачу в Telegram:</p>
+        <div class="input-group">
+          <input type="text" class="form-control" id="tokenLink" readonly>
+          <button class="btn btn-outline-secondary" onclick="copyLink()">📋 Копіювати</button>
+        </div>
+        <div id="copyDone" class="text-success mt-2 d-none">✅ Скопійовано!</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="_layout.js"></script>
+<script>
+let userModal, tokenModal, stores = [];
+
+checkAuth().then(async () => {
+  renderSidebar('Користувачі');
+  stores = await fetch('/api/stores').then(r => r.json());
+  // Фільтр магазинів
+  document.getElementById('filterStore').innerHTML +=
+    stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  loadUsers();
+  userModal  = new bootstrap.Modal('#userModal');
+  tokenModal = new bootstrap.Modal('#tokenModal');
+});
+
+async function loadUsers() {
+  const store  = document.getElementById('filterStore').value;
+  const role   = document.getElementById('filterRole').value;
+  const active = document.getElementById('filterActive').value;
+  let url = '/api/users?';
+  if (store)  url += `store_id=${store}&`;
+  if (role)   url += `role=${role}&`;
+
+  let users = await fetch(url).then(r => r.json());
+  if (active !== '') users = users.filter(u => String(u.is_active) === active);
+
+  const tbody = document.querySelector('#usersTable tbody');
+  tbody.innerHTML = users.map(u => {
+    const roleBadge = u.role === 'security'
+      ? '<span class="badge bg-warning text-dark">🛡 Безпека</span>'
+      : '<span class="badge bg-secondary">👷 Співробітник</span>';
+    const tg = u.telegram_chat_id
+      ? `<span class="text-success">✅ ${u.telegram_username ? '@'+u.telegram_username : u.telegram_chat_id}</span>`
+      : '<span class="text-muted">—</span>';
+    const notifBadge = u.receive_all
+      ? '<span class="badge bg-info text-dark">🌐 Всі магазини</span>'
+      : '<span class="text-muted small">свій магазин</span>';
+    const status = u.is_active
+      ? '<span class="badge bg-success">Активний</span>'
+      : '<span class="badge bg-secondary">Неактивний</span>';
+    return `<tr>
+      <td class="fw-semibold">${u.last_name} ${u.first_name}${u.middle_name ? ' '+u.middle_name : ''}</td>
+      <td>${u.position}</td>
+      <td>${u.store_name || '—'}</td>
+      <td>${roleBadge}</td>
+      <td>${tg}</td>
+      <td>${notifBadge}</td>
+      <td>${status}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary me-1" onclick="showToken(${u.id},'${u.registration_token||''}')">🔗</button>
+        <button class="btn btn-sm btn-outline-secondary me-1" onclick="editUser(${u.id})">✏️</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id},'${esc(u.last_name)} ${esc(u.first_name)}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="text-center text-muted py-3">Немає користувачів</td></tr>';
+}
+
+function esc(s){ return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+function toggleReceiveAll() {
+  const role = document.getElementById('role').value;
+  const row  = document.getElementById('receiveAllRow');
+  row.style.display = role === 'security' ? '' : 'none';
+  if (role !== 'security') document.getElementById('receiveAll').checked = false;
+}
+
+function openModal() {
+  document.getElementById('userId').value = '';
+  ['lastName','firstName','middleName','phone','position'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('role').value = 'security';
+  document.getElementById('isActive').value = '1';
+  document.getElementById('receiveAll').checked = false;
+  toggleReceiveAll();
+  const sel = document.getElementById('storeId');
+  sel.innerHTML = stores.map(s => `<option value="${s.id}">${s.name} — ${s.address||''}</option>`).join('');
+  document.getElementById('modalTitle').textContent = 'Новий користувач';
+  document.getElementById('modalError').classList.add('d-none');
+  userModal.show();
+}
+
+async function editUser(id) {
+  const u = await fetch(`/api/users/${id}`).then(r => r.json());
+  document.getElementById('userId').value        = u.id;
+  document.getElementById('lastName').value      = u.last_name;
+  document.getElementById('firstName').value     = u.first_name;
+  document.getElementById('middleName').value    = u.middle_name || '';
+  document.getElementById('phone').value         = u.phone;
+  document.getElementById('position').value      = u.position;
+  document.getElementById('role').value          = u.role;
+  document.getElementById('isActive').value      = u.is_active;
+  document.getElementById('receiveAll').checked  = !!u.receive_all;
+  toggleReceiveAll();
+  const sel = document.getElementById('storeId');
+  sel.innerHTML = stores.map(s =>
+    `<option value="${s.id}" ${s.id==u.store_id?'selected':''}>${s.name} — ${s.address||''}</option>`
+  ).join('');
+  document.getElementById('modalTitle').textContent = 'Редагувати користувача';
+  document.getElementById('modalError').classList.add('d-none');
+  userModal.show();
+}
+
+async function saveUser() {
+  const id = document.getElementById('userId').value;
+  const body = {
+    last_name:   document.getElementById('lastName').value.trim(),
+    first_name:  document.getElementById('firstName').value.trim(),
+    middle_name: document.getElementById('middleName').value.trim(),
+    phone:       document.getElementById('phone').value.trim(),
+    position:    document.getElementById('position').value.trim(),
+    store_id:    document.getElementById('storeId').value,
+    role:        document.getElementById('role').value,
+    receive_all: document.getElementById('receiveAll').checked ? 1 : 0,
+    is_active:   document.getElementById('isActive').value,
+  };
+  const errEl = document.getElementById('modalError');
+  errEl.classList.add('d-none');
+  const url = id ? `/api/users/${id}` : '/api/users';
+  const res = await fetch(url, { method: id?'PUT':'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    const user = await res.json();
+    userModal.hide();
+    loadUsers();
+    // Для нового користувача — відразу показати токен
+    if (!id && user.registration_token) showToken(user.id, user.registration_token);
+  } else {
+    const data = await res.json();
+    errEl.textContent = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+    errEl.classList.remove('d-none');
+  }
+}
+
+async function showToken(id, token) {
+  if (!token) {
+    // Перегенеруємо токен
+    const res = await fetch(`/api/users/${id}/regenerate-token`, { method: 'POST' });
+    const data = await res.json();
+    token = data.token;
+    loadUsers();
+  }
+  document.getElementById('tokenLink').value = `https://t.me/News_Tesla_bot?start=${token}`;
+  document.getElementById('copyDone').classList.add('d-none');
+  tokenModal.show();
+}
+
+function copyLink() {
+  navigator.clipboard.writeText(document.getElementById('tokenLink').value);
+  document.getElementById('copyDone').classList.remove('d-none');
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`Видалити користувача "${name}"?`)) return;
+  const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+  if (res.ok) loadUsers();
+  else alert('Помилка видалення');
+}
+</script>
+</body>
+</html>

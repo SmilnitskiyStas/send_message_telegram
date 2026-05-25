@@ -1,0 +1,33 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { Database } = require('node-sqlite3-wasm');
+
+let db: any;
+
+export function getDb(): any {
+  if (!db) {
+    const dbPath = path.resolve(config.DATABASE_PATH);
+    const dir = path.dirname(dbPath);
+
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    db = new Database(dbPath);
+    db.exec('PRAGMA foreign_keys = ON');
+
+    logger.info({ dbPath }, 'Database connected');
+  }
+  return db;
+}
+
+export function closeDb(): void {
+  if (db) {
+    db.close();
+    logger.info('Database connection closed');
+  }
+}

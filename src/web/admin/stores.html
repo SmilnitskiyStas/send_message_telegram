@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Магазини — Адмін</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<style>
+  body{background:#f0f2f5}
+  .sidebar{width:220px;min-height:100vh;background:#16213e;position:fixed;top:0;left:0;padding:20px 0}
+  .sidebar .brand{color:#fff;font-weight:700;font-size:1rem;padding:0 20px 20px;border-bottom:1px solid #ffffff22;margin-bottom:12px}
+  .sidebar .nav-link{padding:10px 20px;font-size:.9rem;border-radius:0}
+  .sidebar .nav-link.active{background:#0f3460;color:#fff!important;border-left:3px solid #e94560}
+  .main{margin-left:220px;padding:28px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="brand">🤖 Bot Admin</div>
+  <nav id="sidebar-nav" class="nav flex-column"></nav>
+  <div style="position:absolute;bottom:20px;width:100%;padding:0 12px">
+    <button class="btn btn-outline-danger btn-sm w-100" onclick="logout()">Вийти</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0 fw-bold">🏪 Магазини</h4>
+    <button class="btn btn-primary" onclick="openModal()">+ Додати магазин</button>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0" id="storesTable">
+        <thead class="table-light">
+          <tr><th>Код</th><th>Назва</th><th>Адреса</th><th>Дії</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="storeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalTitle">Магазин</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="storeId">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Код магазину <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="storeCode" placeholder="напр. 12">
+          <div class="form-text">Число з поля "Encoding Device: <b>12</b>-252" у листі камери</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Назва <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="storeName" placeholder="напр. М12">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Адреса</label>
+          <input type="text" class="form-control" id="storeAddress">
+        </div>
+        <div id="modalError" class="alert alert-danger d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+        <button class="btn btn-primary" onclick="saveStore()">Зберегти</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="_layout.js"></script>
+<script>
+let modal;
+checkAuth().then(() => { renderSidebar('Магазини'); loadStores(); modal = new bootstrap.Modal('#storeModal'); });
+
+async function loadStores() {
+  const stores = await fetch('/api/stores').then(r => r.json());
+  const tbody = document.querySelector('#storesTable tbody');
+  tbody.innerHTML = stores.map(s => `
+    <tr>
+      <td><span class="badge bg-primary fs-6">${s.code}</span></td>
+      <td class="fw-semibold">${s.name}</td>
+      <td class="text-muted">${s.address || '—'}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-secondary me-1" onclick="editStore(${s.id},'${esc(s.name)}','${esc(s.code)}','${esc(s.address||'')}')">✏️</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteStore(${s.id},'${esc(s.name)}')">🗑</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="text-center text-muted py-3">Немає магазинів</td></tr>';
+}
+
+function esc(s){ return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+function openModal(id='', name='', code='', address='') {
+  document.getElementById('storeId').value = id;
+  document.getElementById('storeName').value = name;
+  document.getElementById('storeCode').value = code;
+  document.getElementById('storeAddress').value = address;
+  document.getElementById('modalTitle').textContent = id ? 'Редагувати магазин' : 'Новий магазин';
+  document.getElementById('modalError').classList.add('d-none');
+  modal.show();
+}
+
+function editStore(id, name, code, address) { openModal(id, name, code, address); }
+
+async function saveStore() {
+  const id = document.getElementById('storeId').value;
+  const body = {
+    name: document.getElementById('storeName').value.trim(),
+    code: document.getElementById('storeCode').value.trim(),
+    address: document.getElementById('storeAddress').value.trim(),
+  };
+  const errEl = document.getElementById('modalError');
+  errEl.classList.add('d-none');
+
+  const url = id ? `/api/stores/${id}` : '/api/stores';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) { modal.hide(); loadStores(); }
+  else {
+    const data = await res.json();
+    errEl.textContent = data.error || 'Помилка';
+    errEl.classList.remove('d-none');
+  }
+}
+
+async function deleteStore(id, name) {
+  if (!confirm(`Видалити магазин "${name}"?`)) return;
+  const res = await fetch(`/api/stores/${id}`, { method: 'DELETE' });
+  if (res.ok) loadStores();
+  else alert('Помилка видалення');
+}
+</script>
+</body>
+</html>

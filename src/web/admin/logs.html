@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Логи — Адмін</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<style>
+  body{background:#f0f2f5}
+  .sidebar{width:220px;min-height:100vh;background:#16213e;position:fixed;top:0;left:0;padding:20px 0}
+  .sidebar .brand{color:#fff;font-weight:700;font-size:1rem;padding:0 20px 20px;border-bottom:1px solid #ffffff22;margin-bottom:12px}
+  .sidebar .nav-link{padding:10px 20px;font-size:.9rem;border-radius:0}
+  .sidebar .nav-link.active{background:#0f3460;color:#fff!important;border-left:3px solid #e94560}
+  .main{margin-left:220px;padding:28px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="brand">🤖 Bot Admin</div>
+  <nav id="sidebar-nav" class="nav flex-column"></nav>
+  <div style="position:absolute;bottom:20px;width:100%;padding:0 12px">
+    <button class="btn btn-outline-danger btn-sm w-100" onclick="logout()">Вийти</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0 fw-bold">📋 Логи сповіщень</h4>
+    <div class="d-flex align-items-center gap-2">
+      <span id="totalBadge" class="badge bg-secondary fs-6"></span>
+      <div class="dropdown">
+        <button class="btn btn-outline-danger btn-sm dropdown-toggle" data-bs-toggle="dropdown">🗑 Очистити</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="#" onclick="deleteLogs(7)">Старіші 7 днів</a></li>
+          <li><a class="dropdown-item" href="#" onclick="deleteLogs(30)">Старіші 30 днів</a></li>
+          <li><a class="dropdown-item" href="#" onclick="deleteLogs(90)">Старіші 90 днів</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item text-danger" href="#" onclick="deleteLogs(0)">❗ Видалити всі</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+      <table class="table table-hover mb-0" id="logsTable">
+        <thead class="table-light">
+          <tr>
+            <th>Час</th>
+            <th>Тема</th>
+            <th>Магазин</th>
+            <th class="text-center">📨</th>
+            <th class="text-center">❌</th>
+            <th>Статус</th>
+            <th>Деталі</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+      <button class="btn btn-sm btn-outline-secondary" id="btnPrev" onclick="changePage(-1)">← Назад</button>
+      <span id="pageInfo" class="text-muted small"></span>
+      <button class="btn btn-sm btn-outline-secondary" id="btnNext" onclick="changePage(1)">Далі →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal деталей -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📨 Деталі відправки</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="detailBody">Завантаження...</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="_layout.js"></script>
+<script>
+let page = 1, limit = 50, detailModal;
+checkAuth().then(() => { renderSidebar('Логи'); loadLogs(); detailModal = new bootstrap.Modal('#detailModal'); });
+
+async function loadLogs() {
+  const data = await fetch(`/api/logs?page=${page}&limit=${limit}`).then(r => r.json());
+  const totalPages = Math.ceil(data.total / limit) || 1;
+
+  document.getElementById('totalBadge').textContent = `Всього: ${data.total}`;
+  document.getElementById('pageInfo').textContent = `Стор. ${page} / ${totalPages}`;
+  document.getElementById('btnPrev').disabled = page <= 1;
+  document.getElementById('btnNext').disabled = page >= totalPages;
+
+  const tbody = document.querySelector('#logsTable tbody');
+  tbody.innerHTML = data.rows.map(l => {
+    const ids     = JSON.parse(l.users_notified || '[]');
+    const bClass  = {sent:'success', no_recipients:'secondary', failed:'danger'}[l.status] || 'secondary';
+    const bLabel  = {sent:'✅ Відправлено', no_recipients:'⚠️ Немає', failed:'❌ Помилка'}[l.status] || l.status;
+    return `<tr>
+      <td class="text-nowrap small">${(l.created_at||'').slice(0,16)}</td>
+      <td class="small">${l.mail_subject||'—'}</td>
+      <td>${l.store_name||'<span class="text-muted">—</span>'}</td>
+      <td class="text-center"><span class="badge bg-success">${ids.length}</span></td>
+      <td class="text-center" id="fail-${l.id}">—</td>
+      <td><span class="badge bg-${bClass}">${bLabel}</span></td>
+      <td><button class="btn btn-sm btn-outline-primary" onclick="showDetail(${l.id})">🔍</button></td>
+      <td><button class="btn btn-sm btn-outline-danger" onclick="deleteLog(${l.id}, this)">🗑</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">Немає записів</td></tr>';
+}
+
+async function showDetail(logId) {
+  document.getElementById('detailBody').innerHTML = '<div class="text-center py-3">Завантаження...</div>';
+  detailModal.show();
+
+  const data = await fetch(`/api/logs/${logId}/sends`).then(r => r.json());
+  const { log, sends } = data;
+
+  const sentRows  = sends.filter(s => s.status === 'sent');
+  const failRows  = sends.filter(s => s.status === 'failed');
+
+  // Оновити лічильник помилок у таблиці
+  const failCell = document.getElementById(`fail-${logId}`);
+  if (failCell) failCell.innerHTML = failRows.length
+    ? `<span class="badge bg-danger">${failRows.length}</span>`
+    : '<span class="text-muted">0</span>';
+
+  const roleBadge = r => r.role === 'security'
+    ? '<span class="badge bg-warning text-dark">🛡 Безпека</span>'
+    : '<span class="badge bg-secondary">👷 Співробітник</span>';
+
+  const rows = sends.map(s => `
+    <tr class="${s.status==='failed'?'table-danger':''}">
+      <td>${s.status==='sent'?'✅':'❌'}</td>
+      <td>${s.user_full_name||'—'}</td>
+      <td>${roleBadge(s)}</td>
+      <td>${s.store_name||'—'}</td>
+      <td class="small text-muted">${s.chat_id||'—'}</td>
+      <td class="small text-danger">${s.error_message||''}</td>
+      <td class="small text-muted">${(s.sent_at||'').slice(11,19)}</td>
+    </tr>`).join('');
+
+  document.getElementById('detailBody').innerHTML = `
+    <div class="mb-3 small text-muted">
+      <b>Лист:</b> ${log.mail_subject||'—'} &nbsp;|&nbsp;
+      <b>Від:</b> ${log.mail_from||'—'} &nbsp;|&nbsp;
+      <b>Час:</b> ${(log.mail_received_at||'').slice(0,16)}
+    </div>
+    <div class="mb-2">
+      <span class="badge bg-success me-2">✅ Надіслано: ${sentRows.length}</span>
+      ${failRows.length ? `<span class="badge bg-danger">❌ Помилок: ${failRows.length}</span>` : ''}
+    </div>
+    ${sends.length ? `
+    <table class="table table-sm table-bordered mb-0">
+      <thead class="table-light">
+        <tr><th></th><th>ПІБ</th><th>Роль</th><th>Магазин</th><th>Chat ID</th><th>Помилка</th><th>Час</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>` : '<div class="text-muted">Детальних записів немає (старі логи)</div>'}`;
+}
+
+function changePage(d) { page += d; loadLogs(); }
+
+async function deleteLog(id, btn) {
+  if (!confirm('Видалити цей запис логу?')) return;
+  btn.disabled = true;
+  const res = await fetch(`/api/logs/${id}`, { method: 'DELETE' });
+  if (res.ok) {
+    btn.closest('tr').remove();
+    const badge = document.getElementById('totalBadge');
+    const cur = parseInt(badge.textContent.replace(/\D/g,'')) || 0;
+    badge.textContent = `Всього: ${Math.max(0, cur - 1)}`;
+  } else {
+    btn.disabled = false;
+    alert('Помилка видалення');
+  }
+}
+
+async function deleteLogs(days) {
+  const msg = days === 0
+    ? 'Видалити ВСІ логи? Це незворотньо!'
+    : `Видалити логи старіші ${days} днів?`;
+  if (!confirm(msg)) return;
+  const res = await fetch(`/api/logs?days=${days}`, { method: 'DELETE' });
+  if (res.ok) {
+    const data = await res.json();
+    alert(`Видалено: ${data.deleted} записів. Залишилось: ${data.remaining}`);
+    page = 1;
+    loadLogs();
+  } else {
+    alert('Помилка видалення');
+  }
+}
+</script>
+</body>
+</html>
