@@ -17,8 +17,15 @@ export function getDb(): any {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    // Очищення lock-директорії яка залишається після падіння процесу
+    const lockPath = dbPath + '.lock';
+    if (fs.existsSync(lockPath)) {
+      fs.rmSync(lockPath, { recursive: true, force: true });
+      logger.warn({ lockPath }, 'Removed stale database lock directory');
+    }
+
     db = new Database(dbPath);
-    db.exec('PRAGMA busy_timeout = 10000'); // чекати до 10 сек якщо база зайнята
+    db.exec('PRAGMA busy_timeout = 10000');
     db.exec('PRAGMA foreign_keys = ON');
 
     logger.info({ dbPath }, 'Database connected');
