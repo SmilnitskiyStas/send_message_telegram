@@ -18,10 +18,10 @@ async function main() {
   seedStores();
   seedUsers();
 
-  await startBot();
-
   const app = createServer();
-  startServer(app);
+  await startServer(app);
+
+  await startBot();
 
   const imapService = new ImapService(handleNewMail);
   imapService.start();

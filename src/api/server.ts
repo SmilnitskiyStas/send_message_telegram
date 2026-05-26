@@ -1,13 +1,14 @@
 import express from 'express';
 import session from 'express-session';
+import type { AddressInfo } from 'node:net';
 import * as path from 'path';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { requireAuth } from './middleware/auth';
-import authRouter   from './routes/auth';
+import authRouter from './routes/auth';
 import storesRouter from './routes/stores';
-import usersRouter  from './routes/users';
-import logsRouter   from './routes/logs';
+import usersRouter from './routes/users';
+import logsRouter from './routes/logs';
 
 export function createServer(): express.Application {
   const app = express();
@@ -19,28 +20,21 @@ export function createServer(): express.Application {
     secret: config.ADMIN_PASSWORD + '_session_secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 год
+    cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
   }));
 
-  // Публічний маршрут авторизації
   app.use('/api/auth', authRouter);
-
-  // Статика адмін-панелі (перевірка авторизації відбувається в JS)
   app.use('/admin', express.static(path.join(__dirname, '../../src/web/admin')));
 
-  // Захищені API-маршрути
   app.use('/api', requireAuth);
   app.use('/api/stores', storesRouter);
-  app.use('/api/users',  usersRouter);
-  app.use('/api/logs',   logsRouter);
+  app.use('/api/users', usersRouter);
+  app.use('/api/logs', logsRouter);
 
-  // Редирект / → /admin/
   app.get('/', (_req, res) => res.redirect('/admin/'));
 
-  // 404
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
 
-  // Error handler
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     logger.error(err, 'API error');
     res.status(500).json({ error: err.message });
@@ -49,27 +43,44 @@ export function createServer(): express.Application {
   return app;
 }
 
-export function startServer(app: express.Application): void {
-  // Парсимо --port=N та --host=IP з CLI аргументів (adm.tools, cPanel передають їх автоматично)
+export function startServer(app: express.Application): Promise<void> {
   let port = config.PORT;
   let host: string | undefined;
 
   for (const arg of process.argv.slice(2)) {
     const portMatch = arg.match(/^--port=(\d+)$/);
-    if (portMatch) { port = parseInt(portMatch[1], 10); }
+    if (portMatch) {
+      port = parseInt(portMatch[1], 10);
+    }
 
     const hostMatch = arg.match(/^--host=(.+)$/);
-    if (hostMatch) { host = hostMatch[1]; }
+    if (hostMatch) {
+      host = hostMatch[1];
+    }
   }
 
-  const onListen = () => {
-    const addr = host ? `${host}:${port}` : `localhost:${port}`;
-    logger.info({ port, host: host ?? '0.0.0.0' }, `Admin server started → http://${addr}/admin/`);
-  };
+  return new Promise((resolve, reject) => {
+    const server = host ? app.listen(port, host) : app.listen(port);
 
-  if (host) {
-    app.listen(port, host, onListen);
-  } else {
-    app.listen(port, onListen);
-  }
+    server.once('listening', () => {
+      const address = server.address();
+      const boundHost =
+        typeof address === 'object' && address
+          ? address.address
+          : host ?? '0.0.0.0';
+      const boundPort =
+        typeof address === 'object' && address
+          ? (address as AddressInfo).port
+          : port;
+      const addr = host ? `${host}:${boundPort}` : `${boundHost}:${boundPort}`;
+
+      logger.info({ port: boundPort, host: boundHost }, `Admin server started -> http://${addr}/admin/`);
+      resolve();
+    });
+
+    server.once('error', (err) => {
+      logger.error({ err, port, host: host ?? '0.0.0.0' }, 'Failed to start admin server');
+      reject(err);
+    });
+  });
 }

@@ -15,9 +15,9 @@ async function main() {
     (0, migrate_1.runMigrations)();
     (0, seeds_1.seedStores)();
     (0, seeds_1.seedUsers)();
-    await (0, bot_service_1.startBot)();
     const app = (0, server_1.createServer)();
-    (0, server_1.startServer)(app);
+    await (0, server_1.startServer)(app);
+    await (0, bot_service_1.startBot)();
     const imapService = new imap_service_1.ImapService(handleNewMail);
     imapService.start();
     const shutdown = async () => {

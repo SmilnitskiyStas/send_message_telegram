@@ -56,22 +56,16 @@ function createServer() {
         secret: config_1.config.ADMIN_PASSWORD + '_session_secret',
         resave: false,
         saveUninitialized: false,
-        cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 год
+        cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
     }));
-    // Публічний маршрут авторизації
     app.use('/api/auth', auth_2.default);
-    // Статика адмін-панелі (перевірка авторизації відбувається в JS)
     app.use('/admin', express_1.default.static(path.join(__dirname, '../../src/web/admin')));
-    // Захищені API-маршрути
     app.use('/api', auth_1.requireAuth);
     app.use('/api/stores', stores_1.default);
     app.use('/api/users', users_1.default);
     app.use('/api/logs', logs_1.default);
-    // Редирект / → /admin/
     app.get('/', (_req, res) => res.redirect('/admin/'));
-    // 404
     app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
-    // Error handler
     app.use((err, _req, res, _next) => {
         logger_1.logger.error(err, 'API error');
         res.status(500).json({ error: err.message });
@@ -79,7 +73,6 @@ function createServer() {
     return app;
 }
 function startServer(app) {
-    // Парсимо --port=N та --host=IP з CLI аргументів (adm.tools, cPanel передають їх автоматично)
     let port = config_1.config.PORT;
     let host;
     for (const arg of process.argv.slice(2)) {
@@ -92,15 +85,24 @@ function startServer(app) {
             host = hostMatch[1];
         }
     }
-    const onListen = () => {
-        const addr = host ? `${host}:${port}` : `localhost:${port}`;
-        logger_1.logger.info({ port, host: host ?? '0.0.0.0' }, `Admin server started → http://${addr}/admin/`);
-    };
-    if (host) {
-        app.listen(port, host, onListen);
-    }
-    else {
-        app.listen(port, onListen);
-    }
+    return new Promise((resolve, reject) => {
+        const server = host ? app.listen(port, host) : app.listen(port);
+        server.once('listening', () => {
+            const address = server.address();
+            const boundHost = typeof address === 'object' && address
+                ? address.address
+                : host ?? '0.0.0.0';
+            const boundPort = typeof address === 'object' && address
+                ? address.port
+                : port;
+            const addr = host ? `${host}:${boundPort}` : `${boundHost}:${boundPort}`;
+            logger_1.logger.info({ port: boundPort, host: boundHost }, `Admin server started -> http://${addr}/admin/`);
+            resolve();
+        });
+        server.once('error', (err) => {
+            logger_1.logger.error({ err, port, host: host ?? '0.0.0.0' }, 'Failed to start admin server');
+            reject(err);
+        });
+    });
 }
 //# sourceMappingURL=server.js.map
