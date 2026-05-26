@@ -83,11 +83,9 @@ function seedUsers() {
       first_name       = excluded.first_name,
       middle_name      = excluded.middle_name,
       phone            = excluded.phone,
-      position         = excluded.position,
-      store_id         = excluded.store_id,
-      telegram_username= excluded.telegram_username,
-      role             = excluded.role,
-      is_active        = 1
+      position         = excluded.position
+    -- НЕ оновлюємо: is_active, role, store_id, telegram_username
+    -- (ці поля керуються через адмін-панель і не мають скидатись при рестарті)
   `);
     let count = 0;
     for (const u of USERS) {
