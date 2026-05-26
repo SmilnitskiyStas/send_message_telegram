@@ -18,6 +18,7 @@ export function getDb(): any {
     }
 
     db = new Database(dbPath);
+    db.exec('PRAGMA busy_timeout = 10000'); // чекати до 10 сек якщо база зайнята
     db.exec('PRAGMA foreign_keys = ON');
 
     logger.info({ dbPath }, 'Database connected');
