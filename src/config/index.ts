@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
 
-dotenv.config({ override: true });
+dotenv.config();
 
 const envSchema = z.object({
   MAIL_HOST: z.string().min(1),

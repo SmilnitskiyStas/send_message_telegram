@@ -36,7 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.config = void 0;
 const zod_1 = require("zod");
 const dotenv = __importStar(require("dotenv"));
-dotenv.config({ override: true });
+dotenv.config();
 const envSchema = zod_1.z.object({
     MAIL_HOST: zod_1.z.string().min(1),
     MAIL_PORT: zod_1.z.coerce.number().default(993),
