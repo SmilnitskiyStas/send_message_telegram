@@ -79,8 +79,28 @@ function createServer() {
     return app;
 }
 function startServer(app) {
-    app.listen(config_1.config.PORT, () => {
-        logger_1.logger.info({ port: config_1.config.PORT }, 'Admin server started → http://localhost:' + config_1.config.PORT + '/admin/');
-    });
+    // Парсимо --port=N та --host=IP з CLI аргументів (adm.tools, cPanel передають їх автоматично)
+    let port = config_1.config.PORT;
+    let host;
+    for (const arg of process.argv.slice(2)) {
+        const portMatch = arg.match(/^--port=(\d+)$/);
+        if (portMatch) {
+            port = parseInt(portMatch[1], 10);
+        }
+        const hostMatch = arg.match(/^--host=(.+)$/);
+        if (hostMatch) {
+            host = hostMatch[1];
+        }
+    }
+    const onListen = () => {
+        const addr = host ? `${host}:${port}` : `localhost:${port}`;
+        logger_1.logger.info({ port, host: host ?? '0.0.0.0' }, `Admin server started → http://${addr}/admin/`);
+    };
+    if (host) {
+        app.listen(port, host, onListen);
+    }
+    else {
+        app.listen(port, onListen);
+    }
 }
 //# sourceMappingURL=server.js.map

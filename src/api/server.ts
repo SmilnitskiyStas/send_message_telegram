@@ -50,7 +50,26 @@ export function createServer(): express.Application {
 }
 
 export function startServer(app: express.Application): void {
-  app.listen(config.PORT, () => {
-    logger.info({ port: config.PORT }, 'Admin server started → http://localhost:' + config.PORT + '/admin/');
-  });
+  // Парсимо --port=N та --host=IP з CLI аргументів (adm.tools, cPanel передають їх автоматично)
+  let port = config.PORT;
+  let host: string | undefined;
+
+  for (const arg of process.argv.slice(2)) {
+    const portMatch = arg.match(/^--port=(\d+)$/);
+    if (portMatch) { port = parseInt(portMatch[1], 10); }
+
+    const hostMatch = arg.match(/^--host=(.+)$/);
+    if (hostMatch) { host = hostMatch[1]; }
+  }
+
+  const onListen = () => {
+    const addr = host ? `${host}:${port}` : `localhost:${port}`;
+    logger.info({ port, host: host ?? '0.0.0.0' }, `Admin server started → http://${addr}/admin/`);
+  };
+
+  if (host) {
+    app.listen(port, host, onListen);
+  } else {
+    app.listen(port, onListen);
+  }
 }
