@@ -17,6 +17,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   ADMIN_PASSWORD: z.string().min(1).default('change_me_please'),
 
+  MESSAGE_DELETE_AFTER_DAYS: z.coerce.number().default(7),
+
   STORE_DETECTION_PATTERN: z.string().default('магазин|store|shop'),
 
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),

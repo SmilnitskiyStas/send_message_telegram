@@ -95,31 +95,31 @@ export async function stopBot(): Promise<void> {
 
 // ── Надсилання сповіщень ──────────────────────────────────────────────────────
 
+// Повертає масив message_id надісланих повідомлень (для подальшого видалення)
 export async function sendNotification(
   chatId: number,
   email: ParsedEmail,
   storeName: string | null,
-): Promise<void> {
+): Promise<number[]> {
   const b = getBot();
   const text = buildNotificationText(email, storeName);
 
   const images = email.attachments.filter((a) => a.isImage);
 
   if (images.length === 0) {
-    await b.api.sendMessage(chatId, text, { parse_mode: 'HTML' });
-    return;
+    const msg = await b.api.sendMessage(chatId, text, { parse_mode: 'HTML' });
+    return [msg.message_id];
   }
 
   if (images.length === 1) {
-    await b.api.sendPhoto(chatId, new InputFile(images[0].content, images[0].filename), {
+    const msg = await b.api.sendPhoto(chatId, new InputFile(images[0].content, images[0].filename), {
       caption: text,
       parse_mode: 'HTML',
     });
-    return;
+    return [msg.message_id];
   }
 
   // Кілька зображень — надсилаємо як media group
-  // Перше фото отримує підпис, решта без підпису (обмеження Telegram)
   const media = images.map((img, i) =>
     InputMediaBuilder.photo(new InputFile(img.content, img.filename), {
       caption: i === 0 ? text : undefined,
@@ -127,7 +127,8 @@ export async function sendNotification(
     }),
   );
 
-  await b.api.sendMediaGroup(chatId, media);
+  const msgs = await b.api.sendMediaGroup(chatId, media);
+  return msgs.map((m) => m.message_id);
 }
 
 export async function sendTextMessage(chatId: number, text: string): Promise<void> {

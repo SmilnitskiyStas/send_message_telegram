@@ -3,6 +3,7 @@ import { seedStores, seedUsers } from './db/seeds';
 import { logger } from './utils/logger';
 import { ImapService } from './services/mail/imap.service';
 import { startBot, stopBot } from './services/telegram/bot.service';
+import { startMessageCleanup } from './services/telegram/message-cleanup';
 import { dispatchNotification } from './services/notification/dispatcher';
 import { createServer, startServer } from './api/server';
 import { ParsedEmail } from './types';
@@ -22,6 +23,7 @@ async function main() {
   await startServer(app);
 
   await startBot();
+  startMessageCleanup();
 
   const imapService = new ImapService(handleNewMail);
   imapService.start();

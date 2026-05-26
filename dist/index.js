@@ -5,6 +5,7 @@ const seeds_1 = require("./db/seeds");
 const logger_1 = require("./utils/logger");
 const imap_service_1 = require("./services/mail/imap.service");
 const bot_service_1 = require("./services/telegram/bot.service");
+const message_cleanup_1 = require("./services/telegram/message-cleanup");
 const dispatcher_1 = require("./services/notification/dispatcher");
 const server_1 = require("./api/server");
 async function handleNewMail(email) {
@@ -18,6 +19,7 @@ async function main() {
     const app = (0, server_1.createServer)();
     await (0, server_1.startServer)(app);
     await (0, bot_service_1.startBot)();
+    (0, message_cleanup_1.startMessageCleanup)();
     const imapService = new imap_service_1.ImapService(handleNewMail);
     imapService.start();
     const shutdown = async () => {

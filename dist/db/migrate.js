@@ -42,6 +42,7 @@ function applyAlterMigrations(db) {
     // Додаємо нові колонки в існуючі таблиці (безпечно — ігноруємо якщо вже є)
     const alterations = [
         "ALTER TABLE users ADD COLUMN receive_all INTEGER DEFAULT 0",
+        "ALTER TABLE message_sends ADD COLUMN telegram_message_ids TEXT",
     ];
     for (const sql of alterations) {
         try {

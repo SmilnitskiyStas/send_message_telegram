@@ -47,6 +47,7 @@ const envSchema = zod_1.z.object({
     DATABASE_PATH: zod_1.z.string().default('./data/mailbot.db'),
     PORT: zod_1.z.coerce.number().default(3000),
     ADMIN_PASSWORD: zod_1.z.string().min(1).default('change_me_please'),
+    MESSAGE_DELETE_AFTER_DAYS: zod_1.z.coerce.number().default(7),
     STORE_DETECTION_PATTERN: zod_1.z.string().default('магазин|store|shop'),
     LOG_LEVEL: zod_1.z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
 });

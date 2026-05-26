@@ -9,6 +9,7 @@ interface SendRecord {
   user: User;
   role: string;
   ok: boolean;
+  messageIds?: number[];
   error?: string;
 }
 
@@ -16,15 +17,15 @@ async function sendToUser(
   user: User,
   email: ParsedEmail,
   storeName: string | null,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; messageIds?: number[]; error?: string }> {
   try {
-    await sendNotification(user.telegram_chat_id!, email, storeName);
+    const messageIds = await sendNotification(user.telegram_chat_id!, email, storeName);
     logger.info(
       { userId: user.id, chatId: user.telegram_chat_id, role: user.role,
         name: `${user.last_name} ${user.first_name}`, receiveAll: !!user.receive_all },
       'Notification sent',
     );
-    return { ok: true };
+    return { ok: true, messageIds };
   } catch (err: any) {
     const errMsg = err?.message ?? String(err);
     logger.error(
@@ -40,8 +41,8 @@ function logSends(logId: number, records: SendRecord[], storeName: string | null
   const db = getDb();
   const stmt = db.prepare(`
     INSERT INTO message_sends
-      (log_id, user_id, user_full_name, chat_id, role, store_name, status, error_message)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (log_id, user_id, user_full_name, chat_id, role, store_name, status, error_message, telegram_message_ids)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of records) {
     const fullName = `${r.user.last_name} ${r.user.first_name}${r.user.middle_name ? ' ' + r.user.middle_name : ''}`;
@@ -54,6 +55,7 @@ function logSends(logId: number, records: SendRecord[], storeName: string | null
       storeName,
       r.ok ? 'sent' : 'failed',
       r.error ?? null,
+      r.messageIds ? JSON.stringify(r.messageIds) : null,
     ]);
   }
 }
@@ -102,15 +104,15 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
   // Порядок: охорона магазину → глобальна охорона → співробітники магазину
   for (const user of storeSecurityUsers) {
     const res = await sendToUser(user, email, storeName);
-    records.push({ user, role: 'security', ...res });
+    records.push({ user, role: 'security', ok: res.ok, messageIds: res.messageIds, error: res.error });
   }
   for (const user of globalSecurityUsers) {
     const res = await sendToUser(user, email, storeName);
-    records.push({ user, role: 'security_global', ...res });
+    records.push({ user, role: 'security_global', ok: res.ok, messageIds: res.messageIds, error: res.error });
   }
   for (const user of employeeUsers) {
     const res = await sendToUser(user, email, storeName);
-    records.push({ user, role: 'employee', ...res });
+    records.push({ user, role: 'employee', ok: res.ok, messageIds: res.messageIds, error: res.error });
   }
 
   const notifiedIds  = records.filter(r => r.ok).map(r => r.user.id);
