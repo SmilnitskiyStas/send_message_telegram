@@ -26,6 +26,7 @@
 <div class="main">
   <div class="topbar">
     <h4 class="mb-0 fw-bold">📊 Дашборд</h4>
+    <button class="btn btn-warning" onclick="openTestModal()">🧪 Тест відправки</button>
   </div>
   <div class="row g-3 mb-4" id="stats"></div>
   <div class="card stat-card">
@@ -40,13 +41,94 @@
     </div>
   </div>
 </div>
+<!-- Модалка тестової відправки -->
+<div class="modal fade" id="testModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🧪 Тестова відправка сповіщення</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">Відправить тестове повідомлення через Telegram всім активним користувачам обраного магазину.</p>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Магазин</label>
+          <select class="form-select" id="testStoreSelect">
+            <option value="">— Перший доступний (авто) —</option>
+          </select>
+        </div>
+        <div id="testResult" class="d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+        <button class="btn btn-warning" id="testSendBtn" onclick="sendTest()">🚀 Відправити тест</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="_layout.js"></script>
 <script>
+let testModal;
 checkAuth().then(() => {
   renderSidebar('Дашборд');
   loadStats();
   loadLogs();
+  testModal = new bootstrap.Modal('#testModal');
+  loadStoresForTest();
 });
+
+async function loadStoresForTest() {
+  const stores = await fetch('/api/stores').then(r => r.json());
+  const sel = document.getElementById('testStoreSelect');
+  stores.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = `${s.name} (код: ${s.code})`;
+    sel.appendChild(opt);
+  });
+}
+
+function openTestModal() {
+  document.getElementById('testResult').className = 'd-none';
+  document.getElementById('testResult').innerHTML = '';
+  testModal.show();
+}
+
+async function sendTest() {
+  const storeId = document.getElementById('testStoreSelect').value;
+  const btn = document.getElementById('testSendBtn');
+  const result = document.getElementById('testResult');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Відправляємо...';
+  result.className = 'd-none';
+
+  try {
+    const body = storeId ? { store_id: parseInt(storeId) } : {};
+    const res = await fetch('/api/test/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      result.className = 'alert alert-success';
+      result.innerHTML = `✅ ${data.message}`;
+    } else {
+      result.className = 'alert alert-danger';
+      result.innerHTML = `❌ Помилка: ${data.error}`;
+    }
+  } catch (e) {
+    result.className = 'alert alert-danger';
+    result.innerHTML = '❌ Помилка з\'єднання';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🚀 Відправити тест';
+}
 
 async function loadStats() {
   const [stores, users, logs] = await Promise.all([

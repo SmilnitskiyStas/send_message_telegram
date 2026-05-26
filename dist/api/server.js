@@ -48,6 +48,7 @@ const auth_2 = __importDefault(require("./routes/auth"));
 const stores_1 = __importDefault(require("./routes/stores"));
 const users_1 = __importDefault(require("./routes/users"));
 const logs_1 = __importDefault(require("./routes/logs"));
+const test_1 = __importDefault(require("./routes/test"));
 function createServer() {
     const app = (0, express_1.default)();
     app.use(express_1.default.json());
@@ -64,6 +65,7 @@ function createServer() {
     app.use('/api/stores', stores_1.default);
     app.use('/api/users', users_1.default);
     app.use('/api/logs', logs_1.default);
+    app.use('/api/test', test_1.default);
     app.get('/', (_req, res) => res.redirect('/admin/'));
     app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
     app.use((err, _req, res, _next) => {
