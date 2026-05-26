@@ -73,20 +73,6 @@ function seedUsers() {
     const storeMap = {};
     for (const s of stores)
         storeMap[s.code] = s.id;
-    const upsert = db.prepare(`
-    INSERT INTO users
-      (last_name, first_name, middle_name, phone, position, store_id,
-       telegram_chat_id, telegram_username, role, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-    ON CONFLICT(telegram_chat_id) DO UPDATE SET
-      last_name        = excluded.last_name,
-      first_name       = excluded.first_name,
-      middle_name      = excluded.middle_name,
-      phone            = excluded.phone,
-      position         = excluded.position
-    -- НЕ оновлюємо: is_active, role, store_id, telegram_username
-    -- (ці поля керуються через адмін-панель і не мають скидатись при рестарті)
-  `);
     let count = 0;
     for (const u of USERS) {
         const storeId = storeMap[u.shop_code] ?? null;
@@ -94,10 +80,38 @@ function seedUsers() {
             logger_1.logger.warn({ shop_code: u.shop_code, name: u.last_name }, 'Store not found for user, skipping');
             continue;
         }
-        upsert.run([
-            u.last_name, u.first_name, u.middle_name, u.phone, u.position,
-            storeId, u.chat_id, u.username || null, u.role,
-        ]);
+        // Шукаємо існуючого користувача по телефону
+        const existing = db.prepare('SELECT id, telegram_chat_id FROM users WHERE phone = ?').get([u.phone]);
+        if (existing) {
+            // Оновлюємо тільки ім'я/посаду та telegram_chat_id (якщо ще не прив'язаний через бот)
+            db.prepare(`
+        UPDATE users SET
+          last_name          = ?,
+          first_name         = ?,
+          middle_name        = ?,
+          position           = ?,
+          telegram_chat_id   = CASE WHEN telegram_chat_id IS NULL THEN ? ELSE telegram_chat_id END,
+          telegram_username  = CASE WHEN telegram_username IS NULL AND ? IS NOT NULL THEN ? ELSE telegram_username END
+        WHERE phone = ?
+      `).run([
+                u.last_name, u.first_name, u.middle_name, u.position,
+                u.chat_id,
+                u.username || null, u.username || null,
+                u.phone,
+            ]);
+        }
+        else {
+            // Вставляємо нового користувача
+            db.prepare(`
+        INSERT INTO users
+          (last_name, first_name, middle_name, phone, position, store_id,
+           telegram_chat_id, telegram_username, role, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `).run([
+                u.last_name, u.first_name, u.middle_name, u.phone, u.position,
+                storeId, u.chat_id, u.username || null, u.role,
+            ]);
+        }
         count++;
     }
     logger_1.logger.info({ count }, 'Users seeded');

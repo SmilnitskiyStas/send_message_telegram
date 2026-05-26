@@ -4,6 +4,19 @@ const express_1 = require("express");
 const db_1 = require("../../db");
 const dispatcher_1 = require("../../services/notification/dispatcher");
 const router = (0, express_1.Router)();
+// GET /api/test/users — діагностика: показати всіх користувачів з їх станом
+router.get('/users', (_req, res) => {
+    const db = (0, db_1.getDb)();
+    const users = db.prepare(`
+    SELECT u.id, u.last_name, u.first_name, u.role, u.is_active,
+           u.receive_all, u.telegram_chat_id, u.telegram_username,
+           s.name AS store_name, s.code AS store_code
+    FROM users u
+    LEFT JOIN stores s ON s.id = u.store_id
+    ORDER BY u.id
+  `).all([]);
+    res.json(users);
+});
 // POST /api/test/send  — тестова відправка сповіщення
 // Body: { store_id?: number }  — якщо не вказано, береться перший магазин з активними юзерами
 router.post('/send', async (req, res) => {
