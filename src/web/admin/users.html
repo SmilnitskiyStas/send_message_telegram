@@ -59,7 +59,7 @@
     <div class="card-body p-0">
       <table class="table table-hover mb-0" id="usersTable">
         <thead class="table-light">
-          <tr><th>ПІБ</th><th>Посада</th><th>Магазин</th><th>Роль</th><th>Telegram</th><th>Сповіщення</th><th>Статус</th><th>Дії</th></tr>
+          <tr><th>ПІБ</th><th>Посада</th><th>Магазин</th><th>Роль</th><th>Telegram</th><th>Chat ID</th><th>Сповіщення</th><th>Статус</th><th>Дії</th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -97,6 +97,14 @@
           <div class="col-md-6">
             <label class="form-label fw-semibold">Посада *</label>
             <input type="text" class="form-control" id="position">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Telegram Chat ID</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="telegramChatId" placeholder="Заповнюється через бот" readonly style="background:#f8f9fa">
+              <button class="btn btn-outline-secondary" type="button" onclick="clearChatId()" title="Відв'язати Telegram">🔓</button>
+            </div>
+            <div class="form-text" id="tgUsernameHint"></div>
           </div>
           <div class="col-md-6">
             <label class="form-label fw-semibold">Магазин *</label>
@@ -189,8 +197,11 @@ async function loadUsers() {
       ? '<span class="badge bg-warning text-dark">🛡 Безпека</span>'
       : '<span class="badge bg-secondary">👷 Співробітник</span>';
     const tg = u.telegram_chat_id
-      ? `<span class="text-success">✅ ${u.telegram_username ? '@'+u.telegram_username : u.telegram_chat_id}</span>`
+      ? `<span class="text-success">✅${u.telegram_username ? ' @'+u.telegram_username : ''}</span>`
       : '<span class="text-muted">—</span>';
+    const chatId = u.telegram_chat_id
+      ? `<code class="small">${u.telegram_chat_id}</code>`
+      : '<span class="text-muted small">—</span>';
     const notifBadge = u.receive_all
       ? '<span class="badge bg-info text-dark">🌐 Всі магазини</span>'
       : '<span class="text-muted small">свій магазин</span>';
@@ -203,6 +214,7 @@ async function loadUsers() {
       <td>${u.store_name || '—'}</td>
       <td>${roleBadge}</td>
       <td>${tg}</td>
+      <td>${chatId}</td>
       <td>${notifBadge}</td>
       <td>${status}</td>
       <td>
@@ -211,7 +223,7 @@ async function loadUsers() {
         <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id},'${esc(u.last_name)} ${esc(u.first_name)}')">🗑</button>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="7" class="text-center text-muted py-3">Немає користувачів</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="text-center text-muted py-3">Немає користувачів</td></tr>';
 }
 
 function esc(s){ return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
@@ -229,6 +241,8 @@ function openModal() {
   document.getElementById('role').value = 'security';
   document.getElementById('isActive').value = '1';
   document.getElementById('receiveAll').checked = false;
+  document.getElementById('telegramChatId').value = '';
+  document.getElementById('tgUsernameHint').textContent = '';
   toggleReceiveAll();
   const sel = document.getElementById('storeId');
   sel.innerHTML = stores.map(s => `<option value="${s.id}">${s.name} — ${s.address||''}</option>`).join('');
@@ -248,6 +262,8 @@ async function editUser(id) {
   document.getElementById('role').value          = u.role;
   document.getElementById('isActive').value      = u.is_active;
   document.getElementById('receiveAll').checked  = !!u.receive_all;
+  document.getElementById('telegramChatId').value = u.telegram_chat_id || '';
+  document.getElementById('tgUsernameHint').textContent = u.telegram_username ? '@' + u.telegram_username : (u.telegram_chat_id ? '' : 'Не підключено — відправте посилання реєстрації');
   toggleReceiveAll();
   const sel = document.getElementById('storeId');
   sel.innerHTML = stores.map(s =>
@@ -304,6 +320,21 @@ async function showToken(id, token) {
 function copyLink() {
   navigator.clipboard.writeText(document.getElementById('tokenLink').value);
   document.getElementById('copyDone').classList.remove('d-none');
+}
+
+async function clearChatId() {
+  const id = document.getElementById('userId').value;
+  if (!id) { alert('Спочатку збережіть користувача'); return; }
+  if (!confirm('Відв\'язати Telegram акаунт від цього користувача?')) return;
+  const res = await fetch(`/api/users/${id}/regenerate-token`, { method: 'POST' });
+  if (res.ok) {
+    document.getElementById('telegramChatId').value = '';
+    document.getElementById('tgUsernameHint').textContent = 'Не підключено — відправте посилання реєстрації';
+    loadUsers();
+    alert('Telegram відв\'язано. Згенеровано новий токен реєстрації.');
+  } else {
+    alert('Помилка');
+  }
 }
 
 async function deleteUser(id, name) {
