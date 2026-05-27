@@ -11,6 +11,7 @@ const envSchema = z.object({
   MAIL_POLL_INTERVAL_SEC: z.coerce.number().default(30),
 
   TELEGRAM_BOT_TOKEN: z.string().transform(v => v || undefined).optional(),
+  TELEGRAM_BOT_NAME: z.string().default(''),
 
   DATABASE_PATH: z.string().default('./data/mailbot.db'),
 

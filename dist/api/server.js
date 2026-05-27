@@ -62,6 +62,9 @@ function createServer() {
     app.use('/api/auth', auth_2.default);
     app.use('/admin', express_1.default.static(path.join(__dirname, '../../src/web/admin')));
     app.use('/api', auth_1.requireAuth);
+    app.get('/api/config', (_req, res) => {
+        res.json({ botName: config_1.config.TELEGRAM_BOT_NAME });
+    });
     app.use('/api/stores', stores_1.default);
     app.use('/api/users', users_1.default);
     app.use('/api/logs', logs_1.default);

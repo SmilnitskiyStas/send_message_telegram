@@ -187,11 +187,14 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="_layout.js"></script>
 <script>
-let userModal, tokenModal, stores = [];
+let userModal, tokenModal, stores = [], botName = '';
 
 checkAuth().then(async () => {
   renderSidebar('Користувачі');
-  stores = await fetch('/api/stores').then(r => r.json());
+  [stores, { botName }] = await Promise.all([
+    fetch('/api/stores').then(r => r.json()),
+    fetch('/api/config').then(r => r.json()),
+  ]);
   // Фільтр магазинів
   document.getElementById('filterStore').innerHTML +=
     stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
@@ -410,7 +413,7 @@ async function showToken(id, token) {
     token = data.token;
     loadUsers();
   }
-  document.getElementById('tokenLink').value = `https://t.me/News_Tesla_bot?start=${token}`;
+  document.getElementById('tokenLink').value = `https://t.me/${botName}?start=${token}`;
   document.getElementById('copyDone').classList.add('d-none');
   tokenModal.show();
 }

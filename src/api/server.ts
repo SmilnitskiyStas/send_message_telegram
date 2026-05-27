@@ -28,6 +28,9 @@ export function createServer(): express.Application {
   app.use('/admin', express.static(path.join(__dirname, '../../src/web/admin')));
 
   app.use('/api', requireAuth);
+  app.get('/api/config', (_req, res) => {
+    res.json({ botName: config.TELEGRAM_BOT_NAME });
+  });
   app.use('/api/stores', storesRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/logs', logsRouter);

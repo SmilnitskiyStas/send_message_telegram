@@ -44,6 +44,7 @@ const envSchema = zod_1.z.object({
     MAIL_PASS: zod_1.z.string().min(1),
     MAIL_POLL_INTERVAL_SEC: zod_1.z.coerce.number().default(30),
     TELEGRAM_BOT_TOKEN: zod_1.z.string().transform(v => v || undefined).optional(),
+    TELEGRAM_BOT_NAME: zod_1.z.string().default(''),
     DATABASE_PATH: zod_1.z.string().default('./data/mailbot.db'),
     PORT: zod_1.z.coerce.number().default(3000),
     ADMIN_PASSWORD: zod_1.z.string().min(1).default('change_me_please'),
