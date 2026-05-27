@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getBot = getBot;
 exports.startBot = startBot;
@@ -23,13 +56,26 @@ function getBot() {
     }
     return bot;
 }
+// Нормалізація телефону — тільки цифри
+function normalizePhone(phone) {
+    return phone.replace(/\D/g, '');
+}
 function registerHandlers(b) {
+    // ─── /start без токена — просимо поділитися номером ───────────────────────
     b.command('start', async (ctx) => {
         const token = ctx.match?.trim();
         if (!token) {
-            await ctx.reply('👋 Це бот сповіщень служби безпеки.\n\nДля реєстрації зверніться до адміністратора та отримайте персональне посилання.');
+            await ctx.reply('👋 Привіт!\n\nЦей бот надсилає сповіщення служби безпеки магазинів.\n\n' +
+                '📱 Щоб отримати посилання для реєстрації, натисніть кнопку нижче та поділіться своїм номером телефону:', {
+                reply_markup: {
+                    keyboard: [[{ text: '📱 Поділитися номером телефону', request_contact: true }]],
+                    resize_keyboard: true,
+                    one_time_keyboard: true,
+                },
+            });
             return;
         }
+        // ─── /start з токеном — стандартна реєстрація ─────────────────────────
         const db = (0, db_1.getDb)();
         const user = db
             .prepare('SELECT * FROM users WHERE registration_token = ? AND is_active = 1')
@@ -48,12 +94,58 @@ function registerHandlers(b) {
         const store = user.store_id
             ? db.prepare('SELECT * FROM stores WHERE id = ?').get([user.store_id])
             : undefined;
-        const text = (0, templates_1.buildRegistrationSuccessText)(user.first_name, user.last_name, store?.name ?? null, user.role);
-        await ctx.reply(text, { parse_mode: 'HTML' });
+        await ctx.reply((0, templates_1.buildRegistrationSuccessText)(user.first_name, user.last_name, store?.name ?? null, user.role), { parse_mode: 'HTML' });
         logger_1.logger.info({ userId: user.id, chatId: ctx.chat.id, username: ctx.from?.username }, 'User registered via Telegram');
     });
+    // ─── Користувач поділився номером телефону ────────────────────────────────
+    b.on('message:contact', async (ctx) => {
+        const contact = ctx.message.contact;
+        if (!contact?.phone_number)
+            return;
+        // Перевіряємо що користувач поділився СВОЇМ номером (не чужим)
+        if (contact.user_id && contact.user_id !== ctx.from?.id) {
+            await ctx.reply('⚠️ Будь ласка, поділіться своїм власним номером телефону.', { reply_markup: { remove_keyboard: true } });
+            return;
+        }
+        const db = (0, db_1.getDb)();
+        const normalizedIncoming = normalizePhone(contact.phone_number);
+        // Шукаємо користувача за номером телефону
+        const allUsers = db.prepare('SELECT * FROM users WHERE is_active = 1 AND telegram_chat_id IS NULL').all();
+        const matched = allUsers.find((u) => normalizePhone(u.phone) === normalizedIncoming ||
+            // Підтримка формату без коду країни (380XXXXXXXX vs 0XXXXXXXX)
+            normalizePhone(u.phone).endsWith(normalizedIncoming.slice(-9)) ||
+            normalizedIncoming.endsWith(normalizePhone(u.phone).slice(-9)));
+        if (!matched) {
+            await ctx.reply('❌ Ваш номер телефону не знайдено в системі або акаунт вже зареєстровано.\n\n' +
+                'Зверніться до адміністратора.', { reply_markup: { remove_keyboard: true } });
+            logger_1.logger.info({ phone: normalizedIncoming, chatId: ctx.chat.id }, 'Phone not found in users for registration');
+            return;
+        }
+        if (!matched.registration_token) {
+            // Генеруємо новий токен якщо його нема
+            const { randomBytes } = await Promise.resolve().then(() => __importStar(require('crypto')));
+            const newToken = randomBytes(24).toString('hex');
+            db.prepare(`UPDATE users SET registration_token = ? WHERE id = ?`).run([newToken, matched.id]);
+            matched.registration_token = newToken;
+        }
+        const botName = config_1.config.TELEGRAM_BOT_NAME;
+        const link = `https://t.me/${botName}?start=${matched.registration_token}`;
+        await ctx.reply(`✅ Знайшли ваш акаунт!\n\n` +
+            `👤 <b>${matched.last_name} ${matched.first_name}</b>\n\n` +
+            `Для завершення реєстрації натисніть кнопку нижче:`, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [[
+                        { text: '✅ Зареєструватися', url: link },
+                    ]],
+                remove_keyboard: true,
+            },
+        });
+        logger_1.logger.info({ userId: matched.id, phone: normalizedIncoming, chatId: ctx.chat.id }, 'Registration link sent via phone lookup');
+    });
+    // ─── Будь-яке інше повідомлення ───────────────────────────────────────────
     b.on('message', async (ctx) => {
-        await ctx.reply('👋 Використовуйте посилання від адміністратора для реєстрації.');
+        await ctx.reply('👋 Використовуйте посилання від адміністратора або натисніть /start для реєстрації.');
     });
     b.catch((err) => {
         logger_1.logger.error({ err: err.error, ctx: err.ctx?.update }, 'Telegram bot error');

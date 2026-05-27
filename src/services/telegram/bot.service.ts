@@ -20,17 +20,33 @@ export function getBot(): Bot {
   return bot;
 }
 
+// Нормалізація телефону — тільки цифри
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, '');
+}
+
 function registerHandlers(b: Bot): void {
+
+  // ─── /start без токена — просимо поділитися номером ───────────────────────
   b.command('start', async (ctx) => {
     const token = ctx.match?.trim();
 
     if (!token) {
       await ctx.reply(
-        '👋 Це бот сповіщень служби безпеки.\n\nДля реєстрації зверніться до адміністратора та отримайте персональне посилання.',
+        '👋 Привіт!\n\nЦей бот надсилає сповіщення служби безпеки магазинів.\n\n' +
+        '📱 Щоб отримати посилання для реєстрації, натисніть кнопку нижче та поділіться своїм номером телефону:',
+        {
+          reply_markup: {
+            keyboard: [[{ text: '📱 Поділитися номером телефону', request_contact: true }]],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+          },
+        },
       );
       return;
     }
 
+    // ─── /start з токеном — стандартна реєстрація ─────────────────────────
     const db = getDb();
     const user: User | undefined = db
       .prepare('SELECT * FROM users WHERE registration_token = ? AND is_active = 1')
@@ -56,14 +72,10 @@ function registerHandlers(b: Bot): void {
       ? db.prepare('SELECT * FROM stores WHERE id = ?').get([user.store_id])
       : undefined;
 
-    const text = buildRegistrationSuccessText(
-      user.first_name,
-      user.last_name,
-      store?.name ?? null,
-      user.role,
+    await ctx.reply(
+      buildRegistrationSuccessText(user.first_name, user.last_name, store?.name ?? null, user.role),
+      { parse_mode: 'HTML' },
     );
-
-    await ctx.reply(text, { parse_mode: 'HTML' });
 
     logger.info(
       { userId: user.id, chatId: ctx.chat.id, username: ctx.from?.username },
@@ -71,8 +83,87 @@ function registerHandlers(b: Bot): void {
     );
   });
 
+  // ─── Користувач поділився номером телефону ────────────────────────────────
+  b.on('message:contact', async (ctx) => {
+    const contact = ctx.message.contact;
+    if (!contact?.phone_number) return;
+
+    // Перевіряємо що користувач поділився СВОЇМ номером (не чужим)
+    if (contact.user_id && contact.user_id !== ctx.from?.id) {
+      await ctx.reply(
+        '⚠️ Будь ласка, поділіться своїм власним номером телефону.',
+        { reply_markup: { remove_keyboard: true } },
+      );
+      return;
+    }
+
+    const db = getDb();
+    const normalizedIncoming = normalizePhone(contact.phone_number);
+
+    // Шукаємо користувача за номером телефону
+    const allUsers = db.prepare(
+      'SELECT * FROM users WHERE is_active = 1 AND telegram_chat_id IS NULL',
+    ).all() as User[];
+
+    const matched = allUsers.find(
+      (u) => normalizePhone(u.phone) === normalizedIncoming ||
+             // Підтримка формату без коду країни (380XXXXXXXX vs 0XXXXXXXX)
+             normalizePhone(u.phone).endsWith(normalizedIncoming.slice(-9)) ||
+             normalizedIncoming.endsWith(normalizePhone(u.phone).slice(-9)),
+    );
+
+    if (!matched) {
+      await ctx.reply(
+        '❌ Ваш номер телефону не знайдено в системі або акаунт вже зареєстровано.\n\n' +
+        'Зверніться до адміністратора.',
+        { reply_markup: { remove_keyboard: true } },
+      );
+      logger.info(
+        { phone: normalizedIncoming, chatId: ctx.chat.id },
+        'Phone not found in users for registration',
+      );
+      return;
+    }
+
+    if (!matched.registration_token) {
+      // Генеруємо новий токен якщо його нема
+      const { randomBytes } = await import('crypto');
+      const newToken = randomBytes(24).toString('hex');
+      db.prepare(
+        `UPDATE users SET registration_token = ? WHERE id = ?`,
+      ).run([newToken, matched.id]);
+      matched.registration_token = newToken;
+    }
+
+    const botName = config.TELEGRAM_BOT_NAME;
+    const link = `https://t.me/${botName}?start=${matched.registration_token}`;
+
+    await ctx.reply(
+      `✅ Знайшли ваш акаунт!\n\n` +
+      `👤 <b>${matched.last_name} ${matched.first_name}</b>\n\n` +
+      `Для завершення реєстрації натисніть кнопку нижче:`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Зареєструватися', url: link },
+          ]],
+          remove_keyboard: true,
+        } as any,
+      },
+    );
+
+    logger.info(
+      { userId: matched.id, phone: normalizedIncoming, chatId: ctx.chat.id },
+      'Registration link sent via phone lookup',
+    );
+  });
+
+  // ─── Будь-яке інше повідомлення ───────────────────────────────────────────
   b.on('message', async (ctx) => {
-    await ctx.reply('👋 Використовуйте посилання від адміністратора для реєстрації.');
+    await ctx.reply(
+      '👋 Використовуйте посилання від адміністратора або натисніть /start для реєстрації.',
+    );
   });
 
   b.catch((err) => {
