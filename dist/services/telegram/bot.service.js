@@ -44,29 +44,53 @@ const logger_1 = require("../../utils/logger");
 const db_1 = require("../../db");
 const templates_1 = require("./templates");
 let bot;
+const pendingReg = new Map(); // chatId → стан реєстрації
+// Очистка протермінованих сесій (> 10 хвилин)
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, s] of pendingReg) {
+        if (now - s.startedAt > 10 * 60_000)
+            pendingReg.delete(id);
+    }
+}, 5 * 60_000);
+function chunkArr(arr, n) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += n)
+        out.push(arr.slice(i, i + n));
+    return out;
+}
+function getStoreButtons() {
+    const stores = (0, db_1.getDb)()
+        .prepare('SELECT id, name, code FROM stores ORDER BY CAST(code AS INTEGER)')
+        .all();
+    const rows = chunkArr(stores, 6).map(row => row.map(s => ({ text: s.name, callback_data: `reg_store_${s.id}` })));
+    rows.push([{ text: '❌ Скасувати', callback_data: 'reg_cancel' }]);
+    return rows;
+}
+// ── Ініціалізація бота ────────────────────────────────────────────────────────
 function getBot() {
     if (!bot) {
-        if (!config_1.config.TELEGRAM_BOT_TOKEN) {
+        if (!config_1.config.TELEGRAM_BOT_TOKEN)
             throw new Error('TELEGRAM_BOT_TOKEN is not set');
-        }
         bot = new grammy_1.Bot(config_1.config.TELEGRAM_BOT_TOKEN, {
-            client: { timeoutSeconds: 30 }, // Зменшено з 500с (стандарт) до 30с
+            client: { timeoutSeconds: 30 },
         });
         registerHandlers(bot);
     }
     return bot;
 }
-// Нормалізація телефону — тільки цифри
 function normalizePhone(phone) {
     return phone.replace(/\D/g, '');
 }
 function registerHandlers(b) {
-    // ─── /start без токена — просимо поділитися номером ───────────────────────
+    // ─── /start ───────────────────────────────────────────────────────────────
     b.command('start', async (ctx) => {
+        // Скасовуємо будь-яку незавершену реєстрацію
+        pendingReg.delete(ctx.chat.id);
         const token = ctx.match?.trim();
         if (!token) {
             await ctx.reply('👋 Привіт!\n\nЦей бот надсилає сповіщення служби безпеки магазинів.\n\n' +
-                '📱 Щоб отримати посилання для реєстрації, натисніть кнопку нижче та поділіться своїм номером телефону:', {
+                '📱 Щоб зареєструватися, натисніть кнопку нижче та поділіться своїм номером телефону:', {
                 reply_markup: {
                     keyboard: [[{ text: '📱 Поділитися номером телефону', request_contact: true }]],
                     resize_keyboard: true,
@@ -75,7 +99,7 @@ function registerHandlers(b) {
             });
             return;
         }
-        // ─── /start з токеном — стандартна реєстрація ─────────────────────────
+        // /start з токеном — реєстрація через посилання від адміна
         const db = (0, db_1.getDb)();
         const user = db
             .prepare('SELECT * FROM users WHERE registration_token = ? AND is_active = 1')
@@ -95,21 +119,28 @@ function registerHandlers(b) {
             ? db.prepare('SELECT * FROM stores WHERE id = ?').get([user.store_id])
             : undefined;
         await ctx.reply((0, templates_1.buildRegistrationSuccessText)(user.first_name, user.last_name, store?.name ?? null, user.role), { parse_mode: 'HTML' });
-        logger_1.logger.info({ userId: user.id, chatId: ctx.chat.id, username: ctx.from?.username }, 'User registered via Telegram');
+        logger_1.logger.info({ userId: user.id, chatId: ctx.chat.id, username: ctx.from?.username }, 'User registered via Telegram token');
+    });
+    // ─── /cancel — скасування реєстрації ─────────────────────────────────────
+    b.command('cancel', async (ctx) => {
+        if (pendingReg.delete(ctx.chat.id)) {
+            await ctx.reply('❌ Реєстрацію скасовано.', { reply_markup: { remove_keyboard: true } });
+        }
+        else {
+            await ctx.reply('Немає активної реєстрації.', { reply_markup: { remove_keyboard: true } });
+        }
     });
     // ─── Користувач поділився номером телефону ────────────────────────────────
     b.on('message:contact', async (ctx) => {
         const contact = ctx.message.contact;
         if (!contact?.phone_number)
             return;
-        // Перевіряємо що користувач поділився СВОЇМ номером (не чужим)
         if (contact.user_id && contact.user_id !== ctx.from?.id) {
             await ctx.reply('⚠️ Будь ласка, поділіться своїм власним номером телефону.', { reply_markup: { remove_keyboard: true } });
             return;
         }
         const db = (0, db_1.getDb)();
         const normalizedIncoming = normalizePhone(contact.phone_number);
-        // Шукаємо користувача за номером телефону (серед ВСІХ активних, незалежно від chat_id)
         const allUsers = db.prepare('SELECT * FROM users WHERE is_active = 1').all();
         const phoneMatch = (u) => {
             const dbPhone = normalizePhone(u.phone);
@@ -119,8 +150,21 @@ function registerHandlers(b) {
         };
         const matched = allUsers.find(phoneMatch);
         if (!matched) {
-            await ctx.reply('❌ Ваш номер телефону не знайдено в системі.\n\nЗверніться до адміністратора.', { reply_markup: { remove_keyboard: true } });
-            logger_1.logger.info({ phone: normalizedIncoming, chatId: ctx.chat.id }, 'Phone not found in users for registration');
+            // Телефон не знайдено — починаємо самостійну реєстрацію
+            pendingReg.set(ctx.chat.id, {
+                step: 'last_name',
+                phone: contact.phone_number,
+                startedAt: Date.now(),
+            });
+            await ctx.reply('📝 Ваш номер не знайдено в системі.\n\n' +
+                'Давайте зареєструємось! Введіть ваше <b>прізвище</b>:\n\n' +
+                '<i>Для скасування: /cancel</i>', { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } });
+            logger_1.logger.info({ phone: normalizedIncoming, chatId: ctx.chat.id }, 'Starting self-registration');
+            return;
+        }
+        // Вже зареєстрований в ЦЬОМУ чаті
+        if (matched.telegram_chat_id === ctx.chat.id) {
+            await ctx.reply(`✅ <b>${matched.last_name} ${matched.first_name}</b>, ваш акаунт вже зареєстровано!\n\nВи будете отримувати сповіщення автоматично.`, { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } });
             return;
         }
         // Вже зареєстрований з іншим chat_id
@@ -129,34 +173,184 @@ function registerHandlers(b) {
                 `Якщо потрібно переприв'язати — зверніться до адміністратора.`, { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } });
             return;
         }
-        // Вже зареєстрований в ЦЬОМУ чаті
-        if (matched.telegram_chat_id === ctx.chat.id) {
-            await ctx.reply(`✅ <b>${matched.last_name} ${matched.first_name}</b>, ваш акаунт вже зареєстровано!\n\nВи будете отримувати сповіщення автоматично.`, { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } });
-            return;
-        }
-        // Не зареєстрований — генеруємо токен якщо потрібно і надсилаємо посилання
+        // Знайдено, але ще не зареєстрований — надсилаємо посилання
         if (!matched.registration_token) {
             const { randomBytes } = await Promise.resolve().then(() => __importStar(require('crypto')));
             const newToken = randomBytes(24).toString('hex');
             db.prepare(`UPDATE users SET registration_token = ? WHERE id = ?`).run([newToken, matched.id]);
             matched.registration_token = newToken;
         }
-        const botName = config_1.config.TELEGRAM_BOT_NAME;
-        const link = `https://t.me/${botName}?start=${matched.registration_token}`;
+        const link = `https://t.me/${config_1.config.TELEGRAM_BOT_NAME}?start=${matched.registration_token}`;
         await ctx.reply(`✅ Знайшли ваш акаунт!\n\n` +
             `👤 <b>${matched.last_name} ${matched.first_name}</b>\n\n` +
             `Для завершення реєстрації натисніть кнопку нижче:`, {
             parse_mode: 'HTML',
             reply_markup: {
                 inline_keyboard: [[{ text: '✅ Зареєструватися', url: link }]],
-                remove_keyboard: true,
             },
         });
         logger_1.logger.info({ userId: matched.id, phone: normalizedIncoming, chatId: ctx.chat.id }, 'Registration link sent via phone lookup');
     });
-    // ─── Будь-яке інше повідомлення ───────────────────────────────────────────
+    // ─── Callback queries (вибір магазину, підтвердження тощо) ───────────────
+    b.on('callback_query:data', async (ctx) => {
+        const data = ctx.callbackQuery.data;
+        const chatId = ctx.from.id;
+        // Вибір магазину
+        if (data.startsWith('reg_store_')) {
+            const storeId = parseInt(data.slice('reg_store_'.length));
+            const state = pendingReg.get(chatId);
+            if (!state || state.step !== 'store') {
+                await ctx.answerCallbackQuery('⏰ Сесія реєстрації закінчилась. Натисніть /start');
+                return;
+            }
+            const store = (0, db_1.getDb)().prepare('SELECT * FROM stores WHERE id = ?').get([storeId]);
+            await ctx.editMessageText(`📋 <b>Перевірте ваші дані:</b>\n\n` +
+                `👤 ${state.last_name} ${state.first_name}${state.middle_name ? ' ' + state.middle_name : ''}\n` +
+                `📞 ${state.phone}\n` +
+                `🏪 ${store?.name ?? 'Магазин ' + storeId}\n` +
+                `👷 Співробітник\n\n` +
+                `Все вірно?`, {
+                parse_mode: 'HTML',
+                reply_markup: {
+                    inline_keyboard: [[
+                            { text: '✅ Підтвердити', callback_data: `reg_confirm_${storeId}` },
+                            { text: '◀️ Змінити магазин', callback_data: 'reg_back_store' },
+                        ]],
+                },
+            });
+            await ctx.answerCallbackQuery();
+            return;
+        }
+        // Підтвердження реєстрації
+        if (data.startsWith('reg_confirm_')) {
+            const storeId = parseInt(data.slice('reg_confirm_'.length));
+            const state = pendingReg.get(chatId);
+            if (!state) {
+                await ctx.answerCallbackQuery('⏰ Сесія реєстрації закінчилась. Натисніть /start');
+                return;
+            }
+            try {
+                const db = (0, db_1.getDb)();
+                const store = db.prepare('SELECT * FROM stores WHERE id = ?').get([storeId]);
+                db.prepare(`
+          INSERT INTO users
+            (last_name, first_name, middle_name, phone, position, store_id, role,
+             telegram_chat_id, telegram_username, is_active)
+          VALUES (?, ?, ?, ?, 'Співробітник', ?, 'employee', ?, ?, 1)
+        `).run([
+                    state.last_name, state.first_name, state.middle_name || '',
+                    state.phone, storeId, chatId, ctx.from?.username ?? null,
+                ]);
+                pendingReg.delete(chatId);
+                await ctx.editMessageText(`✅ <b>Реєстрацію завершено!</b>\n\n` +
+                    `👤 ${state.last_name} ${state.first_name}${state.middle_name ? ' ' + state.middle_name : ''}\n` +
+                    `🏪 ${store?.name ?? ''}\n` +
+                    `👷 Співробітник\n\n` +
+                    `Ви будете отримувати сповіщення автоматично.`, { parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } });
+                await ctx.answerCallbackQuery('✅ Зареєстровано!');
+                logger_1.logger.info({ chatId, phone: state.phone, store: store?.name }, 'User self-registered');
+            }
+            catch (err) {
+                pendingReg.delete(chatId);
+                logger_1.logger.error({ err, chatId }, 'Self-registration DB error');
+                await ctx.editMessageText('❌ Помилка реєстрації. Зверніться до адміністратора.', { reply_markup: { inline_keyboard: [] } });
+                await ctx.answerCallbackQuery('❌ Помилка');
+            }
+            return;
+        }
+        // Пропустити по батькові
+        if (data === 'reg_skip_middle') {
+            const state = pendingReg.get(chatId);
+            if (!state || state.step !== 'middle_name') {
+                await ctx.answerCallbackQuery('⏰ Сесія реєстрації закінчилась. Натисніть /start');
+                return;
+            }
+            state.middle_name = '';
+            state.step = 'store';
+            await ctx.editMessageText('🏪 Оберіть ваш <b>магазин</b>:', {
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: getStoreButtons() },
+            });
+            await ctx.answerCallbackQuery();
+            return;
+        }
+        // Повернутись до вибору магазину
+        if (data === 'reg_back_store') {
+            const state = pendingReg.get(chatId);
+            if (!state) {
+                await ctx.answerCallbackQuery('⏰ Сесія реєстрації закінчилась. Натисніть /start');
+                return;
+            }
+            state.step = 'store';
+            await ctx.editMessageText('🏪 Оберіть ваш <b>магазин</b>:', {
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: getStoreButtons() },
+            });
+            await ctx.answerCallbackQuery();
+            return;
+        }
+        // Скасувати реєстрацію
+        if (data === 'reg_cancel') {
+            pendingReg.delete(chatId);
+            await ctx.editMessageText('❌ Реєстрацію скасовано.', { reply_markup: { inline_keyboard: [] } });
+            await ctx.answerCallbackQuery();
+            return;
+        }
+        await ctx.answerCallbackQuery();
+    });
+    // ─── Текстові повідомлення — кроки реєстрації або дефолт ─────────────────
     b.on('message', async (ctx) => {
-        await ctx.reply('👋 Використовуйте посилання від адміністратора або натисніть /start для реєстрації.');
+        const chatId = ctx.chat.id;
+        const state = pendingReg.get(chatId);
+        const text = 'text' in ctx.message ? (ctx.message.text ?? '').trim() : '';
+        if (!state) {
+            await ctx.reply('👋 Використовуйте посилання від адміністратора або натисніть /start для реєстрації.');
+            return;
+        }
+        if (!text) {
+            await ctx.reply('Будь ласка, введіть текстову відповідь.');
+            return;
+        }
+        switch (state.step) {
+            case 'last_name': {
+                if (text.length < 2) {
+                    await ctx.reply('⚠️ Прізвище занадто коротке. Спробуйте ще раз:');
+                    return;
+                }
+                state.last_name = text;
+                state.step = 'first_name';
+                await ctx.reply("Введіть ваше <b>ім'я</b>:", { parse_mode: 'HTML' });
+                break;
+            }
+            case 'first_name': {
+                if (text.length < 2) {
+                    await ctx.reply("⚠️ Ім'я занадто коротке. Спробуйте ще раз:");
+                    return;
+                }
+                state.first_name = text;
+                state.step = 'middle_name';
+                await ctx.reply('Введіть ваше <b>по батькові</b>:', {
+                    parse_mode: 'HTML',
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '➡️ Пропустити', callback_data: 'reg_skip_middle' }]],
+                    },
+                });
+                break;
+            }
+            case 'middle_name': {
+                state.middle_name = text;
+                state.step = 'store';
+                await ctx.reply('🏪 Оберіть ваш <b>магазин</b>:', {
+                    parse_mode: 'HTML',
+                    reply_markup: { inline_keyboard: getStoreButtons() },
+                });
+                break;
+            }
+            case 'store': {
+                await ctx.reply('🏪 Будь ласка, оберіть магазин зі списку вище (або ❌ Скасувати).');
+                break;
+            }
+        }
     });
     b.catch((err) => {
         logger_1.logger.error({ err: err.error, ctx: err.ctx?.update }, 'Telegram bot error');
@@ -164,7 +358,6 @@ function registerHandlers(b) {
 }
 async function startBot() {
     const b = getBot();
-    // Запуск у фоні без await — bot.start() блокуючий
     b.start({
         onStart: (info) => logger_1.logger.info({ username: info.username }, 'Telegram bot started'),
     }).catch((err) => logger_1.logger.error(err, 'Telegram bot crashed'));
@@ -179,7 +372,6 @@ async function stopBot() {
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
-// Retry з затримкою при 429 Too Many Requests
 async function withRetry(fn, maxAttempts = 4) {
     let lastErr;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -202,7 +394,6 @@ async function withRetry(fn, maxAttempts = 4) {
     throw lastErr;
 }
 // ── Надсилання сповіщень ──────────────────────────────────────────────────────
-// Повертає масив message_id надісланих повідомлень (для подальшого видалення)
 async function sendNotification(chatId, text, images) {
     const b = getBot();
     if (images.length === 0) {
@@ -216,7 +407,6 @@ async function sendNotification(chatId, text, images) {
         }));
         return [msg.message_id];
     }
-    // Кілька зображень — надсилаємо як media group
     const media = images.map((img, i) => grammy_1.InputMediaBuilder.photo(new grammy_1.InputFile(img.content, img.filename), {
         caption: i === 0 ? text : undefined,
         parse_mode: i === 0 ? 'HTML' : undefined,
