@@ -81,8 +81,11 @@ export function seedUsers(): void {
       continue;
     }
 
-    // Шукаємо існуючого користувача по телефону
-    const existing: any = db.prepare('SELECT id, telegram_chat_id FROM users WHERE phone = ?').get([u.phone]);
+    // Шукаємо існуючого користувача по телефону АБО по chat_id
+    // (захист від розбіжності форматів телефону: "380..." vs "+380 (66)...")
+    const existing: any = db.prepare(
+      'SELECT id, telegram_chat_id FROM users WHERE phone = ? OR telegram_chat_id = ?',
+    ).get([u.phone, u.chat_id]);
 
     if (existing) {
       // Оновлюємо тільки ім'я/посаду та telegram_chat_id (якщо ще не прив'язаний через бот)
