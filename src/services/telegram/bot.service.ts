@@ -100,22 +100,21 @@ function registerHandlers(b: Bot): void {
     const db = getDb();
     const normalizedIncoming = normalizePhone(contact.phone_number);
 
-    // Шукаємо користувача за номером телефону
-    const allUsers = db.prepare(
-      'SELECT * FROM users WHERE is_active = 1 AND telegram_chat_id IS NULL',
-    ).all() as User[];
+    // Шукаємо користувача за номером телефону (серед ВСІХ активних, незалежно від chat_id)
+    const allUsers = db.prepare('SELECT * FROM users WHERE is_active = 1').all() as User[];
 
-    const matched = allUsers.find(
-      (u) => normalizePhone(u.phone) === normalizedIncoming ||
-             // Підтримка формату без коду країни (380XXXXXXXX vs 0XXXXXXXX)
-             normalizePhone(u.phone).endsWith(normalizedIncoming.slice(-9)) ||
-             normalizedIncoming.endsWith(normalizePhone(u.phone).slice(-9)),
-    );
+    const phoneMatch = (u: User) => {
+      const dbPhone = normalizePhone(u.phone);
+      return dbPhone === normalizedIncoming ||
+        dbPhone.endsWith(normalizedIncoming.slice(-9)) ||
+        normalizedIncoming.endsWith(dbPhone.slice(-9));
+    };
+
+    const matched = allUsers.find(phoneMatch);
 
     if (!matched) {
       await ctx.reply(
-        '❌ Ваш номер телефону не знайдено в системі або акаунт вже зареєстровано.\n\n' +
-        'Зверніться до адміністратора.',
+        '❌ Ваш номер телефону не знайдено в системі.\n\nЗверніться до адміністратора.',
         { reply_markup: { remove_keyboard: true } },
       );
       logger.info(
@@ -125,13 +124,30 @@ function registerHandlers(b: Bot): void {
       return;
     }
 
+    // Вже зареєстрований з іншим chat_id
+    if (matched.telegram_chat_id && matched.telegram_chat_id !== ctx.chat.id) {
+      await ctx.reply(
+        `ℹ️ Акаунт <b>${matched.last_name} ${matched.first_name}</b> вже зареєстровано в іншому Telegram-акаунті.\n\n` +
+        `Якщо потрібно переприв'язати — зверніться до адміністратора.`,
+        { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } },
+      );
+      return;
+    }
+
+    // Вже зареєстрований в ЦЬОМУ чаті
+    if (matched.telegram_chat_id === ctx.chat.id) {
+      await ctx.reply(
+        `✅ <b>${matched.last_name} ${matched.first_name}</b>, ваш акаунт вже зареєстровано!\n\nВи будете отримувати сповіщення автоматично.`,
+        { parse_mode: 'HTML', reply_markup: { remove_keyboard: true } },
+      );
+      return;
+    }
+
+    // Не зареєстрований — генеруємо токен якщо потрібно і надсилаємо посилання
     if (!matched.registration_token) {
-      // Генеруємо новий токен якщо його нема
       const { randomBytes } = await import('crypto');
       const newToken = randomBytes(24).toString('hex');
-      db.prepare(
-        `UPDATE users SET registration_token = ? WHERE id = ?`,
-      ).run([newToken, matched.id]);
+      db.prepare(`UPDATE users SET registration_token = ? WHERE id = ?`).run([newToken, matched.id]);
       matched.registration_token = newToken;
     }
 
@@ -145,9 +161,7 @@ function registerHandlers(b: Bot): void {
       {
         parse_mode: 'HTML',
         reply_markup: {
-          inline_keyboard: [[
-            { text: '✅ Зареєструватися', url: link },
-          ]],
+          inline_keyboard: [[{ text: '✅ Зареєструватися', url: link }]],
           remove_keyboard: true,
         } as any,
       },
