@@ -326,29 +326,48 @@ function openModal() {
 }
 
 async function editUser(id) {
-  const u = await fetch(`/api/users/${id}`).then(r => r.json());
-  document.getElementById('userId').value        = u.id;
-  document.getElementById('lastName').value      = u.last_name;
-  document.getElementById('firstName').value     = u.first_name;
-  document.getElementById('middleName').value    = u.middle_name || '';
-  document.getElementById('phone').value         = u.phone;
-  setPositionValue(u.position);
-  document.getElementById('role').value          = u.role;
-  document.getElementById('roleHint').textContent = '';
-  document.getElementById('isActive').value      = u.is_active;
-  document.getElementById('receiveAll').checked  = !!u.receive_all;
-  document.getElementById('telegramChatId').value = u.telegram_chat_id || '';
-  document.getElementById('tgUsernameHint').textContent = u.telegram_username
-    ? '✅ @' + u.telegram_username
-    : (u.telegram_chat_id ? '✅ Підключено' : 'Не підключено — відправте посилання реєстрації');
-  toggleReceiveAll();
-  const sel = document.getElementById('storeId');
-  sel.innerHTML = stores.map(s =>
-    `<option value="${s.id}" ${s.id==u.store_id?'selected':''}>${s.name} — ${s.address||''}</option>`
-  ).join('');
-  document.getElementById('modalTitle').textContent = 'Редагувати користувача';
-  document.getElementById('modalError').classList.add('d-none');
-  userModal.show();
+  try {
+    const res = await fetch(`/api/users/${id}`);
+    if (!res.ok) { alert('Помилка завантаження користувача: ' + res.status); return; }
+    const u = await res.json();
+
+    // Спочатку заповнюємо список магазинів
+    const storeSel = document.getElementById('storeId');
+    storeSel.innerHTML = stores.map(s =>
+      `<option value="${s.id}" ${String(s.id) === String(u.store_id) ? 'selected' : ''}>${s.name} — ${s.address||''}</option>`
+    ).join('');
+
+    // Основні поля
+    document.getElementById('userId').value     = u.id;
+    document.getElementById('lastName').value   = u.last_name  || '';
+    document.getElementById('firstName').value  = u.first_name || '';
+    document.getElementById('middleName').value = u.middle_name || '';
+    document.getElementById('phone').value      = u.phone || '';
+
+    // Посада
+    setPositionValue(u.position || '');
+
+    // Роль та статус
+    document.getElementById('role').value     = u.role || 'employee';
+    document.getElementById('roleHint').textContent = '';
+    document.getElementById('isActive').value = String(u.is_active ?? 1);
+    document.getElementById('receiveAll').checked = u.receive_all === 1 || u.receive_all === true;
+
+    // Telegram
+    document.getElementById('telegramChatId').value = u.telegram_chat_id ? String(u.telegram_chat_id) : '';
+    document.getElementById('tgUsernameHint').textContent = u.telegram_username
+      ? '✅ @' + u.telegram_username
+      : (u.telegram_chat_id ? '✅ Підключено' : 'Не підключено — відправте посилання реєстрації');
+
+    toggleReceiveAll();
+
+    document.getElementById('modalTitle').textContent = 'Редагувати користувача';
+    document.getElementById('modalError').classList.add('d-none');
+    userModal.show();
+  } catch (err) {
+    console.error('editUser error:', err);
+    alert('Помилка: ' + err.message);
+  }
 }
 
 async function saveUser() {
