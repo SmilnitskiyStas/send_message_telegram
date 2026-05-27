@@ -45,7 +45,9 @@
       <table class="table table-hover mb-0" id="logsTable">
         <thead class="table-light">
           <tr>
-            <th>Час</th>
+            <th>Час відправки</th>
+            <th>Лист отримано</th>
+            <th title="Час від отримання листа до відправки в Telegram">⏱ Затримка</th>
             <th>Тема</th>
             <th>Магазин</th>
             <th class="text-center">📨</th>
@@ -85,6 +87,28 @@
 let page = 1, limit = 50, detailModal;
 checkAuth().then(() => { renderSidebar('Логи'); loadLogs(); detailModal = new bootstrap.Modal('#detailModal'); });
 
+function calcDelaySec(mailReceivedAt, processedAt) {
+  if (!mailReceivedAt || !processedAt) return null;
+  const toMs = s => {
+    const iso = s.includes('T') ? s : s.replace(' ', 'T');
+    const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+    return isNaN(d.getTime()) ? null : d.getTime();
+  };
+  const a = toMs(mailReceivedAt), b = toMs(processedAt);
+  if (a === null || b === null) return null;
+  return Math.round((b - a) / 1000);
+}
+
+function formatDelay(sec) {
+  if (sec === null) return '<span class="text-muted">—</span>';
+  if (sec < 0) return '<span class="text-muted">—</span>';
+  if (sec < 60) return `<span class="text-success fw-semibold">${sec}с</span>`;
+  if (sec < 120) return `<span class="text-warning fw-semibold">${Math.round(sec)}с</span>`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  const color = m >= 5 ? 'danger' : 'warning';
+  return `<span class="text-${color} fw-semibold">${m}хв ${s}с</span>`;
+}
+
 async function loadLogs() {
   const data = await fetch(`/api/logs?page=${page}&limit=${limit}`).then(r => r.json());
   const totalPages = Math.ceil(data.total / limit) || 1;
@@ -99,8 +123,12 @@ async function loadLogs() {
     const ids     = JSON.parse(l.users_notified || '[]');
     const bClass  = {sent:'success', no_recipients:'secondary', failed:'danger'}[l.status] || 'secondary';
     const bLabel  = {sent:'✅ Відправлено', no_recipients:'⚠️ Немає', failed:'❌ Помилка'}[l.status] || l.status;
+    const delaySec = calcDelaySec(l.mail_received_at, l.created_at);
+    const delayHtml = formatDelay(delaySec);
     return `<tr>
       <td class="text-nowrap small">${toKyivTime(l.created_at)}</td>
+      <td class="text-nowrap small text-muted">${l.mail_received_at ? toKyivTime(l.mail_received_at) : '—'}</td>
+      <td class="text-nowrap small">${delayHtml}</td>
       <td class="small">${l.mail_subject||'—'}</td>
       <td>${l.store_name||'<span class="text-muted">—</span>'}</td>
       <td class="text-center"><span class="badge bg-success">${ids.length}</span></td>
@@ -109,7 +137,7 @@ async function loadLogs() {
       <td><button class="btn btn-sm btn-outline-primary" onclick="showDetail(${l.id})">🔍</button></td>
       <td><button class="btn btn-sm btn-outline-danger" onclick="deleteLog(${l.id}, this)">🗑</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="7" class="text-center text-muted py-4">Немає записів</td></tr>';
+  }).join('') || '<tr><td colspan="10" class="text-center text-muted py-4">Немає записів</td></tr>';
 }
 
 async function showDetail(logId) {
