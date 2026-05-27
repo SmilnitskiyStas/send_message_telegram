@@ -12,7 +12,9 @@ export function getBot(): Bot {
     if (!config.TELEGRAM_BOT_TOKEN) {
       throw new Error('TELEGRAM_BOT_TOKEN is not set');
     }
-    bot = new Bot(config.TELEGRAM_BOT_TOKEN);
+    bot = new Bot(config.TELEGRAM_BOT_TOKEN, {
+      client: { timeoutSeconds: 30 }, // Зменшено з 500с (стандарт) до 30с
+    });
     registerHandlers(bot);
   }
   return bot;

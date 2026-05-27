@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { getDb } from '../../db';
 import { logger } from '../../utils/logger';
 import { sendNotification } from '../telegram/bot.service';
@@ -32,6 +33,24 @@ async function sendToUser(
     return { ok: true, messageIds };
   } catch (err: any) {
     const errMsg = err?.message ?? String(err);
+
+    // Користувач заблокував бота — очищаємо chat_id, генеруємо новий токен реєстрації
+    if (errMsg.includes('USER_IS_BLOCKED') || errMsg.includes('bot was blocked by the user')) {
+      try {
+        const newToken = randomBytes(24).toString('hex');
+        getDb().prepare(
+          `UPDATE users SET telegram_chat_id = NULL, telegram_username = NULL,
+           registration_token = ?, updated_at = datetime('now') WHERE id = ?`,
+        ).run([newToken, user.id]);
+        logger.warn(
+          { userId: user.id, chatId: user.telegram_chat_id, name: `${user.last_name} ${user.first_name}` },
+          'User blocked the bot — chat_id cleared, new registration token generated',
+        );
+      } catch (dbErr) {
+        logger.error({ dbErr, userId: user.id }, 'Failed to clear chat_id after USER_IS_BLOCKED');
+      }
+    }
+
     logger.error(
       { err, userId: user.id, chatId: user.telegram_chat_id,
         name: `${user.last_name} ${user.first_name}` },

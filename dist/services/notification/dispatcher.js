@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dispatchNotification = dispatchNotification;
+const crypto_1 = require("crypto");
 const db_1 = require("../../db");
 const logger_1 = require("../../utils/logger");
 const bot_service_1 = require("../telegram/bot.service");
@@ -18,6 +19,18 @@ async function sendToUser(user, email, storeName) {
     }
     catch (err) {
         const errMsg = err?.message ?? String(err);
+        // Користувач заблокував бота — очищаємо chat_id, генеруємо новий токен реєстрації
+        if (errMsg.includes('USER_IS_BLOCKED') || errMsg.includes('bot was blocked by the user')) {
+            try {
+                const newToken = (0, crypto_1.randomBytes)(24).toString('hex');
+                (0, db_1.getDb)().prepare(`UPDATE users SET telegram_chat_id = NULL, telegram_username = NULL,
+           registration_token = ?, updated_at = datetime('now') WHERE id = ?`).run([newToken, user.id]);
+                logger_1.logger.warn({ userId: user.id, chatId: user.telegram_chat_id, name: `${user.last_name} ${user.first_name}` }, 'User blocked the bot — chat_id cleared, new registration token generated');
+            }
+            catch (dbErr) {
+                logger_1.logger.error({ dbErr, userId: user.id }, 'Failed to clear chat_id after USER_IS_BLOCKED');
+            }
+        }
         logger_1.logger.error({ err, userId: user.id, chatId: user.telegram_chat_id,
             name: `${user.last_name} ${user.first_name}` }, 'Failed to send notification');
         return { ok: false, error: errMsg };
