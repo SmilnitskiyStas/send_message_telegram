@@ -1,6 +1,10 @@
 import { getDb } from '../../db';
 import { logger } from '../../utils/logger';
 import { sendNotification } from '../telegram/bot.service';
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+// Затримка між відправками щоб не перевищити ліміт Telegram (30 msg/sec глобально)
+const SEND_DELAY_MS = 300;
 import { detectStore, parseEncodingDevice } from '../mail/store-detector';
 import { extractPlainText } from '../mail/parser.service';
 import { ParsedEmail, User, Store } from '../../types';
@@ -105,14 +109,17 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
   for (const user of storeSecurityUsers) {
     const res = await sendToUser(user, email, storeName);
     records.push({ user, role: 'security', ok: res.ok, messageIds: res.messageIds, error: res.error });
+    await sleep(SEND_DELAY_MS);
   }
   for (const user of globalSecurityUsers) {
     const res = await sendToUser(user, email, storeName);
     records.push({ user, role: 'security_global', ok: res.ok, messageIds: res.messageIds, error: res.error });
+    await sleep(SEND_DELAY_MS);
   }
   for (const user of employeeUsers) {
     const res = await sendToUser(user, email, storeName);
     records.push({ user, role: 'employee', ok: res.ok, messageIds: res.messageIds, error: res.error });
+    await sleep(SEND_DELAY_MS);
   }
 
   const notifiedIds  = records.filter(r => r.ok).map(r => r.user.id);

@@ -70,6 +70,32 @@ async function stopBot() {
         logger_1.logger.info('Telegram bot stopped');
     }
 }
+// ── Утиліти ───────────────────────────────────────────────────────────────────
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+// Retry з затримкою при 429 Too Many Requests
+async function withRetry(fn, maxAttempts = 4) {
+    let lastErr;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (err) {
+            lastErr = err;
+            const retryAfter = err?.parameters?.retry_after ?? err?.retry_after ?? 10;
+            if (err?.error_code === 429 || String(err?.message).includes('429')) {
+                const waitMs = (retryAfter + 1) * 1000;
+                logger_1.logger.warn({ attempt, waitMs, retryAfter }, 'Telegram rate limit (429), waiting before retry');
+                await sleep(waitMs);
+            }
+            else {
+                throw err;
+            }
+        }
+    }
+    throw lastErr;
+}
 // ── Надсилання сповіщень ──────────────────────────────────────────────────────
 // Повертає масив message_id надісланих повідомлень (для подальшого видалення)
 async function sendNotification(chatId, email, storeName) {
@@ -77,14 +103,14 @@ async function sendNotification(chatId, email, storeName) {
     const text = (0, templates_1.buildNotificationText)(email, storeName);
     const images = email.attachments.filter((a) => a.isImage);
     if (images.length === 0) {
-        const msg = await b.api.sendMessage(chatId, text, { parse_mode: 'HTML' });
+        const msg = await withRetry(() => b.api.sendMessage(chatId, text, { parse_mode: 'HTML' }));
         return [msg.message_id];
     }
     if (images.length === 1) {
-        const msg = await b.api.sendPhoto(chatId, new grammy_1.InputFile(images[0].content, images[0].filename), {
+        const msg = await withRetry(() => b.api.sendPhoto(chatId, new grammy_1.InputFile(images[0].content, images[0].filename), {
             caption: text,
             parse_mode: 'HTML',
-        });
+        }));
         return [msg.message_id];
     }
     // Кілька зображень — надсилаємо як media group
@@ -92,7 +118,7 @@ async function sendNotification(chatId, email, storeName) {
         caption: i === 0 ? text : undefined,
         parse_mode: i === 0 ? 'HTML' : undefined,
     }));
-    const msgs = await b.api.sendMediaGroup(chatId, media);
+    const msgs = await withRetry(() => b.api.sendMediaGroup(chatId, media));
     return msgs.map((m) => m.message_id);
 }
 async function sendTextMessage(chatId, text) {

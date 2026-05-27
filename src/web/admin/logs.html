@@ -100,7 +100,7 @@ async function loadLogs() {
     const bClass  = {sent:'success', no_recipients:'secondary', failed:'danger'}[l.status] || 'secondary';
     const bLabel  = {sent:'✅ Відправлено', no_recipients:'⚠️ Немає', failed:'❌ Помилка'}[l.status] || l.status;
     return `<tr>
-      <td class="text-nowrap small">${(l.created_at||'').slice(0,16)}</td>
+      <td class="text-nowrap small">${toKyivTime(l.created_at)}</td>
       <td class="small">${l.mail_subject||'—'}</td>
       <td>${l.store_name||'<span class="text-muted">—</span>'}</td>
       <td class="text-center"><span class="badge bg-success">${ids.length}</span></td>
@@ -140,7 +140,7 @@ async function showDetail(logId) {
       <td>${s.store_name||'—'}</td>
       <td class="small text-muted">${s.chat_id||'—'}</td>
       <td class="small text-danger">${s.error_message||''}</td>
-      <td class="small text-muted">${(s.sent_at||'').slice(11,19)}</td>
+      <td class="small text-muted">${toKyivTime(s.sent_at, true).slice(-8)}</td>
     </tr>`).join('');
 
   document.getElementById('detailBody').innerHTML = `

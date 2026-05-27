@@ -93,6 +93,33 @@ export async function stopBot(): Promise<void> {
   }
 }
 
+// ── Утиліти ───────────────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Retry з затримкою при 429 Too Many Requests
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const retryAfter: number = err?.parameters?.retry_after ?? err?.retry_after ?? 10;
+      if (err?.error_code === 429 || String(err?.message).includes('429')) {
+        const waitMs = (retryAfter + 1) * 1000;
+        logger.warn({ attempt, waitMs, retryAfter }, 'Telegram rate limit (429), waiting before retry');
+        await sleep(waitMs);
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 // ── Надсилання сповіщень ──────────────────────────────────────────────────────
 
 // Повертає масив message_id надісланих повідомлень (для подальшого видалення)
@@ -107,15 +134,17 @@ export async function sendNotification(
   const images = email.attachments.filter((a) => a.isImage);
 
   if (images.length === 0) {
-    const msg = await b.api.sendMessage(chatId, text, { parse_mode: 'HTML' });
+    const msg = await withRetry(() => b.api.sendMessage(chatId, text, { parse_mode: 'HTML' }));
     return [msg.message_id];
   }
 
   if (images.length === 1) {
-    const msg = await b.api.sendPhoto(chatId, new InputFile(images[0].content, images[0].filename), {
-      caption: text,
-      parse_mode: 'HTML',
-    });
+    const msg = await withRetry(() =>
+      b.api.sendPhoto(chatId, new InputFile(images[0].content, images[0].filename), {
+        caption: text,
+        parse_mode: 'HTML',
+      }),
+    );
     return [msg.message_id];
   }
 
@@ -127,7 +156,7 @@ export async function sendNotification(
     }),
   );
 
-  const msgs = await b.api.sendMediaGroup(chatId, media);
+  const msgs = await withRetry(() => b.api.sendMediaGroup(chatId, media));
   return msgs.map((m) => m.message_id);
 }
 

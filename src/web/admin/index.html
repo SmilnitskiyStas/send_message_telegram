@@ -162,7 +162,7 @@ async function loadLogs() {
     const ids = JSON.parse(l.users_notified || '[]');
     const badge = l.status === 'sent' ? 'success' : l.status === 'no_recipients' ? 'secondary' : 'danger';
     return `<tr>
-      <td class="text-nowrap">${l.created_at?.slice(0,16)||''}</td>
+      <td class="text-nowrap">${toKyivTime(l.created_at)}</td>
       <td>${l.mail_subject||''}</td>
       <td>${l.store_name||'—'}</td>
       <td>${ids.length}</td>
