@@ -6,7 +6,7 @@ exports.buildRegistrationSuccessText = buildRegistrationSuccessText;
 function parseEventDetails(body) {
     const get = (pattern) => body.match(pattern)?.[1]?.trim() ?? null;
     // "Encoding Device:37-254 M-37 FR 02" → store=37, recorder=254 (не показуємо), camera=FR 02
-    const deviceMatch = body.match(/Encoding Device\s*:\s*(\d+)-\d+\s+\S+\s+([\w][\w\s]*)/i);
+    const deviceMatch = body.match(/Encoding Device\s*:\s*(\d+)-\d+\s+\S+\s+([\w][^\n\r,]*)/i);
     const simMatch = body.match(/Similarity:\s*(\d+)%/);
     return {
         eventTime: get(/Event Time:\s*([^\n]+)/) ?? '',

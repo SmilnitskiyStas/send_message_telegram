@@ -6,7 +6,7 @@ const db_1 = require("../../db");
 const logger_1 = require("../../utils/logger");
 // "Encoding Device:37-254 M-37 FR 02" → storeNumber="37", cameraNumber="FR 02"
 function parseEncodingDevice(body) {
-    const match = body.match(/Encoding Device\s*:\s*(\d+)-\d+\s+\S+\s+([\w][\w\s]*)/i);
+    const match = body.match(/Encoding Device\s*:\s*(\d+)-\d+\s+\S+\s+([\w][^\n\r,]*)/i);
     return {
         storeNumber: match?.[1]?.trim() ?? null,
         cameraNumber: match?.[2]?.trim() ?? null,
