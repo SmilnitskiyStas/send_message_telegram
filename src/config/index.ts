@@ -13,10 +13,6 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().transform(v => v || undefined).optional(),
   TELEGRAM_BOT_NAME: z.string().default(''),
 
-  // Ollama (локальна ML-модель для парсингу листів)
-  OLLAMA_BINARY: z.string().default(''),        // шлях до бінарника: ~/ollama або /usr/local/bin/ollama
-  OLLAMA_MODEL:  z.string().default('qwen2.5:0.5b'), // модель: qwen2.5:0.5b, llama3.2:1b тощо
-
   DATABASE_PATH: z.string().default('./data/mailbot.db'),
 
   PORT: z.coerce.number().default(3000),

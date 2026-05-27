@@ -5,8 +5,6 @@ export declare const config: {
     MAIL_PASS: string;
     MAIL_POLL_INTERVAL_SEC: number;
     TELEGRAM_BOT_NAME: string;
-    OLLAMA_BINARY: string;
-    OLLAMA_MODEL: string;
     DATABASE_PATH: string;
     PORT: number;
     ADMIN_PASSWORD: string;

@@ -1,6 +1,3 @@
-import { parseWithOllama } from '../ml/ollama.service';
-import { logger } from '../../utils/logger';
-
 export interface EventDetails {
   eventTime: string;
   storeNumber: string | null;  // "32" з "M-32 FR 01"
@@ -12,9 +9,9 @@ export interface EventDetails {
   gender: string | null;
 }
 
-// ─── Regex fallback ───────────────────────────────────────────────────────────
+// ─── Regex парсинг ───────────────────────────────────────────────────────────
 
-export function parseEventDetails(body: string): EventDetails {
+export function extractEventDetails(body: string): EventDetails {
   const get = (pattern: RegExp) => body.match(pattern)?.[1]?.trim() ?? null;
 
   // "Encoding Device:9-254 M-32 FR 01" → store=32 (з M-32), camera=FR 01
@@ -32,35 +29,6 @@ export function parseEventDetails(body: string): EventDetails {
     ageGroup:     get(/Age Group:\s*([^,\n]+)/),
     gender:       get(/Gender:\s*([^,\n]+)/),
   };
-}
-
-// ─── ML + fallback ────────────────────────────────────────────────────────────
-// Спочатку пробуємо Ollama, при невдачі — regex.
-// Поля з Ollama мають пріоритет, пропущені — доповнюємо regex.
-
-export async function extractEventDetails(body: string): Promise<EventDetails> {
-  const regexResult = parseEventDetails(body);
-
-  const aiResult = await parseWithOllama(body);
-  if (!aiResult) return regexResult;
-
-  // Зливаємо: AI-поле використовується якщо не null/порожній рядок
-  const merge = <T>(ai: T | undefined, rx: T): T =>
-    (ai !== null && ai !== undefined && ai !== '') ? ai : rx;
-
-  const merged: EventDetails = {
-    eventTime:   merge(aiResult.eventTime,   regexResult.eventTime),
-    storeNumber: merge(aiResult.storeNumber, regexResult.storeNumber),
-    cameraLabel: merge(aiResult.cameraLabel, regexResult.cameraLabel),
-    targetId:    merge(aiResult.targetId,    regexResult.targetId),
-    personName:  merge(aiResult.personName,  regexResult.personName),
-    similarity:  merge(aiResult.similarity,  regexResult.similarity),
-    ageGroup:    merge(aiResult.ageGroup,    regexResult.ageGroup),
-    gender:      merge(aiResult.gender,      regexResult.gender),
-  };
-
-  logger.debug({ aiResult, regexResult, merged }, 'Event details extracted (AI+regex merge)');
-  return merged;
 }
 
 // ─── Форматування повідомлення ────────────────────────────────────────────────

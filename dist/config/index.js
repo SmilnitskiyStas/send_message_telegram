@@ -45,9 +45,6 @@ const envSchema = zod_1.z.object({
     MAIL_POLL_INTERVAL_SEC: zod_1.z.coerce.number().default(30),
     TELEGRAM_BOT_TOKEN: zod_1.z.string().transform(v => v || undefined).optional(),
     TELEGRAM_BOT_NAME: zod_1.z.string().default(''),
-    // Ollama (локальна ML-модель для парсингу листів)
-    OLLAMA_BINARY: zod_1.z.string().default(''), // шлях до бінарника: ~/ollama або /usr/local/bin/ollama
-    OLLAMA_MODEL: zod_1.z.string().default('qwen2.5:0.5b'), // модель: qwen2.5:0.5b, llama3.2:1b тощо
     DATABASE_PATH: zod_1.z.string().default('./data/mailbot.db'),
     PORT: zod_1.z.coerce.number().default(3000),
     ADMIN_PASSWORD: zod_1.z.string().min(1).default('change_me_please'),

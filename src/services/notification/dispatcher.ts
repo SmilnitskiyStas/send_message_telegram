@@ -92,8 +92,8 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
   const storeName = store?.name ?? null;
   const storeId   = store?.id ?? null;
 
-  // Витягуємо поля ОДИН раз (Ollama або regex) і будуємо текст
-  const eventFields = await extractEventDetails(plainText);
+  // Витягуємо поля через regex і будуємо текст
+  const eventFields = extractEventDetails(plainText);
   const notificationText = buildNotificationText(eventFields, storeName);
   const images = email.attachments.filter(a => a.isImage);
 

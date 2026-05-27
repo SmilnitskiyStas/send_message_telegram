@@ -65,8 +65,8 @@ async function dispatchNotification(email) {
     const store = (0, store_detector_1.detectStore)(email.subject, plainText);
     const storeName = store?.name ?? null;
     const storeId = store?.id ?? null;
-    // Витягуємо поля ОДИН раз (Ollama або regex) і будуємо текст
-    const eventFields = await (0, templates_1.extractEventDetails)(plainText);
+    // Витягуємо поля через regex і будуємо текст
+    const eventFields = (0, templates_1.extractEventDetails)(plainText);
     const notificationText = (0, templates_1.buildNotificationText)(eventFields, storeName);
     const images = email.attachments.filter(a => a.isImage);
     // 1. Охорона конкретного магазину
