@@ -85,7 +85,7 @@ class ImapService {
                         processed++;
                         // Позначаємо лист як прочитаний у поштовій скриньці
                         try {
-                            await client.messageFlagsAdd({ uid: msg.uid }, ['\\Seen'], { uid: true });
+                            await client.messageFlagsAdd(String(msg.uid), ['\\Seen'], { uid: true });
                             logger_1.logger.debug({ uid: msg.uid }, 'Email marked as read');
                         }
                         catch (flagErr) {
