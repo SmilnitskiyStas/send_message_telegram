@@ -10,6 +10,7 @@ import storesRouter from './routes/stores';
 import usersRouter from './routes/users';
 import logsRouter from './routes/logs';
 import testRouter from './routes/test';
+import mlRouter from './routes/ml';
 
 export function createServer(): express.Application {
   const app = express();
@@ -35,6 +36,7 @@ export function createServer(): express.Application {
   app.use('/api/users', usersRouter);
   app.use('/api/logs', logsRouter);
   app.use('/api/test', testRouter);
+  app.use('/api/ml', mlRouter);
 
   app.get('/', (_req, res) => res.redirect('/admin/'));
 

@@ -27,6 +27,7 @@ function renderSidebar(active) {
     { href: '/admin/stores.html', icon: '🏪', label: 'Магазини' },
     { href: '/admin/users.html', icon: '👥', label: 'Користувачі' },
     { href: '/admin/logs.html', icon: '📋', label: 'Логи' },
+    { href: '/admin/ollama.html', icon: '🤖', label: 'Ollama ML' },
   ];
   const html = nav.map(n => `
     <a href="${n.href}" class="nav-link ${active === n.label ? 'active' : 'text-white-50'}">
