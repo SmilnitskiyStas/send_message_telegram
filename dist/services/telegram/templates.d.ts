@@ -2,7 +2,6 @@ import { ParsedEmail } from '../../types';
 export interface EventDetails {
     eventTime: string;
     storeNumber: string | null;
-    cameraNumber: string | null;
     cameraLabel: string | null;
     targetId: string | null;
     personName: string | null;

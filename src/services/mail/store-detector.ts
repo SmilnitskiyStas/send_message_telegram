@@ -2,12 +2,12 @@ import { getDb } from '../../db';
 import { logger } from '../../utils/logger';
 import { Store } from '../../types';
 
-// "Encoding Device: 12-252 M-12 FR 02" → storeNumber="12", cameraNumber="252"
+// "Encoding Device:37-254 M-37 FR 02" → storeNumber="37", cameraNumber="FR 02"
 export function parseEncodingDevice(body: string): { storeNumber: string | null; cameraNumber: string | null } {
-  const match = body.match(/Encoding Device\s*:\s*(\d+)-(\d+)/i);
+  const match = body.match(/Encoding Device\s*:\s*(\d+)-\d+\s+\S+\s+([\w][\w\s]*)/i);
   return {
-    storeNumber: match?.[1] ?? null,
-    cameraNumber: match?.[2] ?? null,
+    storeNumber: match?.[1]?.trim() ?? null,
+    cameraNumber: match?.[2]?.trim() ?? null,
   };
 }
 

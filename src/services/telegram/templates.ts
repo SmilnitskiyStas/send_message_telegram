@@ -2,9 +2,8 @@ import { ParsedEmail } from '../../types';
 
 export interface EventDetails {
   eventTime: string;
-  storeNumber: string | null;   // "12" з "12-252 M-12 FR 02"
-  cameraNumber: string | null;  // "252" з "12-252 M-12 FR 02"
-  cameraLabel: string | null;   // "M-12 FR 02"
+  storeNumber: string | null;  // "37" з "37-254 M-37 FR 02"
+  cameraLabel: string | null;  // "FR 02" з "37-254 M-37 FR 02"
   targetId: string | null;
   personName: string | null;
   similarity: number | null;
@@ -15,16 +14,15 @@ export interface EventDetails {
 export function parseEventDetails(body: string): EventDetails {
   const get = (pattern: RegExp) => body.match(pattern)?.[1]?.trim() ?? null;
 
-  // "Encoding Device: 12-252 M-12 FR 02" → store=12, camera=252, label=M-12 FR 02
-  const deviceMatch = body.match(/Encoding Device\s*:\s*(\d+)-(\d+)\s+([\w-]+(?:\s+[\w-]+)*)/i);
+  // "Encoding Device:37-254 M-37 FR 02" → store=37, recorder=254 (не показуємо), camera=FR 02
+  const deviceMatch = body.match(/Encoding Device\s*:\s*(\d+)-\d+\s+\S+\s+([\w][\w\s]*)/i);
 
   const simMatch = body.match(/Similarity:\s*(\d+)%/);
 
   return {
     eventTime:    get(/Event Time:\s*([^\n]+)/) ?? '',
-    storeNumber:  deviceMatch?.[1] ?? null,
-    cameraNumber: deviceMatch?.[2] ?? null,
-    cameraLabel:  deviceMatch?.[3]?.trim() ?? null,
+    storeNumber:  deviceMatch?.[1]?.trim() ?? null,
+    cameraLabel:  deviceMatch?.[2]?.trim() ?? null,
     targetId:     get(/Target ID:\s*(\d+)/),
     personName:   get(/Person Name:\s*([^,\n]+)/),
     similarity:   simMatch ? parseInt(simMatch[1]) : null,
@@ -52,8 +50,7 @@ export function buildNotificationText(
     lines.push(`🏪 <b>Магазин №:</b> ${ev.storeNumber}`);
   }
 
-  if (ev.cameraNumber) lines.push(`🎥 <b>Камера №:</b> ${ev.cameraNumber}`);
-  if (ev.cameraLabel)  lines.push(`📷 <b>Назва камери:</b> ${ev.cameraLabel}`);
+  if (ev.cameraLabel) lines.push(`🎥 <b>Камера:</b> ${ev.cameraLabel}`);
 
   lines.push('');
 
