@@ -9,7 +9,8 @@ const parser_service_1 = require("./parser.service");
 class ImapService {
     onNewMail;
     pollTimer = null;
-    isPolling = false;
+    isPolling = false; // блокує тільки IMAP-фазу
+    isDispatching = false; // інформаційний прапор (не блокує новий poll)
     constructor(onNewMail) {
         this.onNewMail = onNewMail;
     }
@@ -49,59 +50,46 @@ class ImapService {
         const db = (0, db_1.getDb)();
         db.prepare('INSERT OR IGNORE INTO processed_emails (uid, mail_subject) VALUES (?, ?)').run([uid, subject]);
     }
-    async pollOnce() {
-        if (this.isPolling) {
-            logger_1.logger.debug('Previous poll still running, skipping');
-            return;
-        }
-        this.isPolling = true;
+    // ─── Фаза 1: IMAP ────────────────────────────────────────────────────────────
+    // Підключається, парсить нові листи, мітить прочитаними, відключається.
+    // isPolling = true ТІЛЬКИ протягом цієї фази (секунди).
+    async fetchNewEmails() {
+        const fetched = [];
         const client = this.createClient();
         try {
             await client.connect();
             const lock = await client.getMailboxLock('INBOX');
             try {
-                // Шукаємо листи за останні 2 дні — незалежно від прапора \Seen
-                // Це захищає від ситуації коли інша програма вже позначила листи як прочитані
                 const since = new Date();
                 since.setDate(since.getDate() - 2);
-                let found = 0;
-                let skipped = 0;
-                let processed = 0;
+                let found = 0, skipped = 0;
                 for await (const msg of client.fetch({ since }, { uid: true, source: true })) {
                     if (!msg.source)
                         continue;
                     found++;
-                    // Пропускаємо вже оброблені (по UID в нашій БД)
                     if (this.isProcessed(msg.uid)) {
                         skipped++;
                         continue;
                     }
                     try {
                         const parsed = await (0, parser_service_1.parseRawEmail)(msg.source);
-                        logger_1.logger.info({ uid: msg.uid, subject: parsed.subject, from: parsed.from, attachments: parsed.attachments.length }, 'New email received');
-                        await this.onNewMail(parsed);
-                        // Зберігаємо UID в нашій БД — більше не обробляємо цей лист
-                        this.markProcessed(msg.uid, parsed.subject);
-                        processed++;
-                        // Позначаємо лист як прочитаний у поштовій скриньці
-                        try {
-                            await client.messageFlagsAdd(String(msg.uid), ['\\Seen'], { uid: true });
-                            logger_1.logger.debug({ uid: msg.uid }, 'Email marked as read');
-                        }
-                        catch (flagErr) {
-                            logger_1.logger.warn({ flagErr, uid: msg.uid }, 'Could not mark email as read');
-                        }
+                        fetched.push({ uid: msg.uid, parsed });
+                        logger_1.logger.info({ uid: msg.uid, subject: parsed.subject, from: parsed.from, attachments: parsed.attachments.length }, 'New email fetched');
                     }
                     catch (err) {
-                        logger_1.logger.error({ err, uid: msg.uid }, 'Failed to process email');
+                        logger_1.logger.error({ err, uid: msg.uid }, 'Failed to parse email');
                     }
                 }
-                if (processed > 0) {
-                    logger_1.logger.info({ found, skipped, processed }, 'Poll completed');
+                // Одразу мітимо прочитаними всі нові листи (поки з'єднання відкрите)
+                for (const { uid } of fetched) {
+                    try {
+                        await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true });
+                    }
+                    catch (flagErr) {
+                        logger_1.logger.warn({ flagErr, uid }, 'Could not mark email as read');
+                    }
                 }
-                else {
-                    logger_1.logger.debug({ found, skipped }, 'No new emails');
-                }
+                logger_1.logger.debug({ found, skipped, newEmails: fetched.length }, 'IMAP fetch completed');
             }
             finally {
                 lock.release();
@@ -113,12 +101,50 @@ class ImapService {
             try {
                 await client.logout();
             }
-            catch {
-                // ignore logout errors
+            catch { /* ignore */ }
+        }
+        return fetched;
+    }
+    // ─── Фаза 2: Dispatch ────────────────────────────────────────────────────────
+    // Відправляє в Telegram. Виконується ПІСЛЯ того як isPolling знятий,
+    // тому наступний poll може стартувати не чекаючи завершення відправки.
+    async dispatchEmails(emails) {
+        this.isDispatching = true;
+        let processed = 0;
+        for (const { uid, parsed } of emails) {
+            // Зберігаємо в БД одразу — щоб повторний poll не взяв той самий лист
+            this.markProcessed(uid, parsed.subject);
+            try {
+                await this.onNewMail(parsed);
+                processed++;
+            }
+            catch (err) {
+                logger_1.logger.error({ err, uid }, 'Failed to dispatch notification');
             }
         }
+        if (processed > 0) {
+            logger_1.logger.info({ processed }, 'Dispatch completed');
+        }
+        this.isDispatching = false;
+    }
+    // ─── Основний цикл ───────────────────────────────────────────────────────────
+    async pollOnce() {
+        if (this.isPolling) {
+            logger_1.logger.debug('Previous IMAP fetch still running, skipping');
+            return;
+        }
+        this.isPolling = true;
+        let emails = [];
+        try {
+            emails = await this.fetchNewEmails();
+        }
         finally {
+            // isPolling знімається ОДРАЗУ після IMAP — не чекаємо Telegram
             this.isPolling = false;
+        }
+        if (emails.length > 0) {
+            // Dispatch запускається асинхронно, не блокуючи наступний poll
+            this.dispatchEmails(emails).catch(err => logger_1.logger.error({ err }, 'Unexpected error in dispatchEmails'));
         }
     }
 }
