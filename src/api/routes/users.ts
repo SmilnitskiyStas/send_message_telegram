@@ -6,15 +6,16 @@ import { randomBytes } from 'crypto';
 const router = Router();
 
 const userSchema = z.object({
-  last_name:    z.string().min(1),
-  first_name:   z.string().min(1),
-  middle_name:  z.string().optional().default(''),
-  phone:        z.string().min(1),
-  position:     z.string().min(1),
-  store_id:     z.coerce.number().int().positive(),
-  role:         z.enum(['security', 'employee']),
-  receive_all:  z.coerce.number().int().min(0).max(1).default(0),
-  is_active:    z.coerce.number().int().min(0).max(1).default(1),
+  last_name:         z.string().min(1),
+  first_name:        z.string().min(1),
+  middle_name:       z.string().optional().default(''),
+  phone:             z.string().min(1),
+  position:          z.string().min(1),
+  store_id:          z.coerce.number().int().positive(),
+  role:              z.enum(['security', 'employee']),
+  receive_all:       z.coerce.number().int().min(0).max(1).default(0),
+  is_active:         z.coerce.number().int().min(0).max(1).default(1),
+  telegram_chat_id:  z.coerce.number().int().nullable().optional(),
 });
 
 function generateToken(): string {
@@ -57,15 +58,21 @@ router.post('/', (req, res) => {
   const parsed = userSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const token = generateToken();
   const d = parsed.data;
   const db = getDb();
+  // Токен реєстрації генеруємо тільки якщо chat_id не вказано вручну
+  const token = d.telegram_chat_id ? null : generateToken();
 
   const result = db.prepare(`
     INSERT INTO users
-      (last_name, first_name, middle_name, phone, position, store_id, role, receive_all, is_active, registration_token)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run([d.last_name, d.first_name, d.middle_name, d.phone, d.position, d.store_id, d.role, d.receive_all, d.is_active, token]);
+      (last_name, first_name, middle_name, phone, position, store_id, role,
+       receive_all, is_active, registration_token, telegram_chat_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run([
+    d.last_name, d.first_name, d.middle_name, d.phone, d.position,
+    d.store_id, d.role, d.receive_all, d.is_active, token,
+    d.telegram_chat_id ?? null,
+  ]);
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get([result.lastInsertRowid]);
   res.status(201).json(user);
@@ -77,12 +84,28 @@ router.put('/:id', (req, res) => {
 
   const d = parsed.data;
   const db = getDb();
+
+  // Якщо chat_id вказано вручну — зберігаємо його, прибираємо токен реєстрації
+  const chatIdClause = 'telegram_chat_id' in req.body
+    ? ', telegram_chat_id = ?, registration_token = CASE WHEN ? IS NOT NULL THEN NULL ELSE registration_token END'
+    : '';
+
+  const params: any[] = [
+    d.last_name, d.first_name, d.middle_name, d.phone, d.position,
+    d.store_id, d.role, d.receive_all, d.is_active,
+  ];
+  if ('telegram_chat_id' in req.body) {
+    params.push(d.telegram_chat_id ?? null, d.telegram_chat_id ?? null);
+  }
+  params.push(req.params.id);
+
   const result = db.prepare(`
     UPDATE users
     SET last_name=?, first_name=?, middle_name=?, phone=?, position=?,
         store_id=?, role=?, receive_all=?, is_active=?
+        ${chatIdClause}
     WHERE id = ?
-  `).run([d.last_name, d.first_name, d.middle_name, d.phone, d.position, d.store_id, d.role, d.receive_all, d.is_active, req.params.id]);
+  `).run(params);
 
   if (!result.changes) return res.status(404).json({ error: 'Not found' });
   res.json(db.prepare('SELECT * FROM users WHERE id = ?').get([req.params.id]));

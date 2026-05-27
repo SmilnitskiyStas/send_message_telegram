@@ -78,44 +78,65 @@
       <div class="modal-body">
         <input type="hidden" id="userId">
         <div class="row g-3">
+
+          <!-- ПІБ -->
+          <div class="col-12"><div class="fw-semibold text-muted small text-uppercase">👤 Особисті дані</div></div>
           <div class="col-md-4">
             <label class="form-label fw-semibold">Прізвище *</label>
-            <input type="text" class="form-control" id="lastName">
+            <input type="text" class="form-control" id="lastName" placeholder="Іванenko">
           </div>
           <div class="col-md-4">
             <label class="form-label fw-semibold">Ім'я *</label>
-            <input type="text" class="form-control" id="firstName">
+            <input type="text" class="form-control" id="firstName" placeholder="Іван">
           </div>
           <div class="col-md-4">
             <label class="form-label fw-semibold">По батькові</label>
-            <input type="text" class="form-control" id="middleName">
+            <input type="text" class="form-control" id="middleName" placeholder="Іванович">
           </div>
           <div class="col-md-6">
-            <label class="form-label fw-semibold">Телефон *</label>
+            <label class="form-label fw-semibold">Номер телефону *</label>
             <input type="text" class="form-control" id="phone" placeholder="+380XXXXXXXXX">
           </div>
+
+          <!-- Посада та роль -->
           <div class="col-md-6">
             <label class="form-label fw-semibold">Посада *</label>
-            <input type="text" class="form-control" id="position">
+            <select class="form-select" id="position" onchange="onPositionChange()">
+              <option value="">— оберіть посаду —</option>
+              <option value="Охорона">🛡 Охорона</option>
+              <option value="Керівник магазину">👔 Керівник магазину</option>
+              <option value="Касир">💳 Касир</option>
+              <option value="Продавець-консультант">🛒 Продавець-консультант</option>
+              <option value="Адміністратор">📋 Адміністратор</option>
+              <option value="Інше">✏️ Інше</option>
+            </select>
+            <input type="text" class="form-control mt-1 d-none" id="positionCustom" placeholder="Введіть посаду вручну">
           </div>
-          <div class="col-md-6">
-            <label class="form-label fw-semibold">Telegram Chat ID</label>
-            <div class="input-group">
-              <input type="text" class="form-control" id="telegramChatId" placeholder="Заповнюється через бот" readonly style="background:#f8f9fa">
-              <button class="btn btn-outline-secondary" type="button" onclick="clearChatId()" title="Відв'язати Telegram">🔓</button>
-            </div>
-            <div class="form-text" id="tgUsernameHint"></div>
-          </div>
+
+          <!-- Магазин та Telegram -->
+          <div class="col-12"><hr class="my-1"><div class="fw-semibold text-muted small text-uppercase">📍 Призначення</div></div>
           <div class="col-md-6">
             <label class="form-label fw-semibold">Магазин *</label>
             <select class="form-select" id="storeId"></select>
           </div>
-          <div class="col-md-3">
-            <label class="form-label fw-semibold">Роль *</label>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Роль</label>
             <select class="form-select" id="role" onchange="toggleReceiveAll()">
               <option value="security">🛡 Служба безпеки</option>
               <option value="employee">👷 Співробітник</option>
             </select>
+            <div class="form-text" id="roleHint"></div>
+          </div>
+
+          <!-- Telegram Chat ID -->
+          <div class="col-12"><hr class="my-1"><div class="fw-semibold text-muted small text-uppercase">💬 Telegram</div></div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Chat ID</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="telegramChatId" placeholder="Заповнюється автоматично через /start">
+              <button class="btn btn-outline-secondary" type="button" onclick="clearChatId()" title="Відв'язати Telegram">🔓</button>
+            </div>
+            <div class="form-text" id="tgUsernameHint">Користувач отримує Chat ID при першому запуску бота (/start)</div>
           </div>
           <div class="col-md-3">
             <label class="form-label fw-semibold">Статус</label>
@@ -124,12 +145,11 @@
               <option value="0">❌ Неактивний</option>
             </select>
           </div>
-          <div class="col-12" id="receiveAllRow">
-            <div class="form-check form-switch">
+          <div class="col-md-3 d-flex align-items-end" id="receiveAllRow">
+            <div class="form-check form-switch pb-2">
               <input class="form-check-input" type="checkbox" id="receiveAll" role="switch">
-              <label class="form-check-label fw-semibold" for="receiveAll">
-                🌐 Отримувати сповіщення з <b>усіх магазинів</b>
-                <span class="text-muted fw-normal small">(не лише зі свого)</span>
+              <label class="form-check-label fw-semibold small" for="receiveAll">
+                🌐 Всі магазини
               </label>
             </div>
           </div>
@@ -228,6 +248,33 @@ async function loadUsers() {
 
 function esc(s){ return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
+// Автоматично визначаємо роль по посаді
+const SECURITY_POSITIONS = ['охорона', 'security', 'охоронець', 'guard'];
+
+function onPositionChange() {
+  const sel = document.getElementById('position');
+  const custom = document.getElementById('positionCustom');
+  const val = sel.value;
+
+  // Показуємо поле "Інше" якщо обрано "Інше"
+  if (val === 'Інше') {
+    custom.classList.remove('d-none');
+    custom.focus();
+  } else {
+    custom.classList.add('d-none');
+    custom.value = '';
+  }
+
+  // Авто-роль: якщо посада = Охорона → security, інакше → employee
+  const positionText = (val === 'Інше' ? custom.value : val).toLowerCase();
+  const isSecurity = SECURITY_POSITIONS.some(s => positionText.includes(s));
+  document.getElementById('role').value = isSecurity ? 'security' : 'employee';
+  document.getElementById('roleHint').textContent = isSecurity
+    ? '🛡 Роль встановлена автоматично — сповіщення тільки по своєму магазину'
+    : '';
+  toggleReceiveAll();
+}
+
 function toggleReceiveAll() {
   const role = document.getElementById('role').value;
   const row  = document.getElementById('receiveAllRow');
@@ -235,14 +282,41 @@ function toggleReceiveAll() {
   if (role !== 'security') document.getElementById('receiveAll').checked = false;
 }
 
+function getPositionValue() {
+  const sel = document.getElementById('position').value;
+  if (sel === 'Інше') return document.getElementById('positionCustom').value.trim();
+  return sel;
+}
+
+function setPositionValue(val) {
+  const sel = document.getElementById('position');
+  const custom = document.getElementById('positionCustom');
+  const options = Array.from(sel.options).map(o => o.value);
+  if (options.includes(val)) {
+    sel.value = val;
+    custom.classList.add('d-none');
+  } else if (val) {
+    sel.value = 'Інше';
+    custom.classList.remove('d-none');
+    custom.value = val;
+  } else {
+    sel.value = '';
+    custom.classList.add('d-none');
+  }
+}
+
 function openModal() {
   document.getElementById('userId').value = '';
-  ['lastName','firstName','middleName','phone','position'].forEach(id => document.getElementById(id).value = '');
+  ['lastName','firstName','middleName','phone'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('position').value = '';
+  document.getElementById('positionCustom').value = '';
+  document.getElementById('positionCustom').classList.add('d-none');
   document.getElementById('role').value = 'security';
+  document.getElementById('roleHint').textContent = '';
   document.getElementById('isActive').value = '1';
   document.getElementById('receiveAll').checked = false;
   document.getElementById('telegramChatId').value = '';
-  document.getElementById('tgUsernameHint').textContent = '';
+  document.getElementById('tgUsernameHint').textContent = 'Користувач отримує Chat ID при першому запуску бота (/start)';
   toggleReceiveAll();
   const sel = document.getElementById('storeId');
   sel.innerHTML = stores.map(s => `<option value="${s.id}">${s.name} — ${s.address||''}</option>`).join('');
@@ -258,12 +332,15 @@ async function editUser(id) {
   document.getElementById('firstName').value     = u.first_name;
   document.getElementById('middleName').value    = u.middle_name || '';
   document.getElementById('phone').value         = u.phone;
-  document.getElementById('position').value      = u.position;
+  setPositionValue(u.position);
   document.getElementById('role').value          = u.role;
+  document.getElementById('roleHint').textContent = '';
   document.getElementById('isActive').value      = u.is_active;
   document.getElementById('receiveAll').checked  = !!u.receive_all;
   document.getElementById('telegramChatId').value = u.telegram_chat_id || '';
-  document.getElementById('tgUsernameHint').textContent = u.telegram_username ? '@' + u.telegram_username : (u.telegram_chat_id ? '' : 'Не підключено — відправте посилання реєстрації');
+  document.getElementById('tgUsernameHint').textContent = u.telegram_username
+    ? '✅ @' + u.telegram_username
+    : (u.telegram_chat_id ? '✅ Підключено' : 'Не підключено — відправте посилання реєстрації');
   toggleReceiveAll();
   const sel = document.getElementById('storeId');
   sel.innerHTML = stores.map(s =>
@@ -276,16 +353,18 @@ async function editUser(id) {
 
 async function saveUser() {
   const id = document.getElementById('userId').value;
+  const chatIdRaw = document.getElementById('telegramChatId').value.trim();
   const body = {
-    last_name:   document.getElementById('lastName').value.trim(),
-    first_name:  document.getElementById('firstName').value.trim(),
-    middle_name: document.getElementById('middleName').value.trim(),
-    phone:       document.getElementById('phone').value.trim(),
-    position:    document.getElementById('position').value.trim(),
-    store_id:    document.getElementById('storeId').value,
-    role:        document.getElementById('role').value,
-    receive_all: document.getElementById('receiveAll').checked ? 1 : 0,
-    is_active:   document.getElementById('isActive').value,
+    last_name:          document.getElementById('lastName').value.trim(),
+    first_name:         document.getElementById('firstName').value.trim(),
+    middle_name:        document.getElementById('middleName').value.trim(),
+    phone:              document.getElementById('phone').value.trim(),
+    position:           getPositionValue(),
+    store_id:           document.getElementById('storeId').value,
+    role:               document.getElementById('role').value,
+    receive_all:        document.getElementById('receiveAll').checked ? 1 : 0,
+    is_active:          document.getElementById('isActive').value,
+    telegram_chat_id:   chatIdRaw ? parseInt(chatIdRaw) : null,
   };
   const errEl = document.getElementById('modalError');
   errEl.classList.add('d-none');
