@@ -5,6 +5,7 @@ import { ImapService } from './services/mail/imap.service';
 import { startBot, stopBot } from './services/telegram/bot.service';
 import { startMessageCleanup } from './services/telegram/message-cleanup';
 import { dispatchNotification } from './services/notification/dispatcher';
+import { startOllama, stopOllama } from './services/ml/ollama.service';
 import { createServer, startServer } from './api/server';
 import { ParsedEmail } from './types';
 
@@ -24,6 +25,7 @@ async function main() {
 
   await startBot();
   startMessageCleanup();
+  await startOllama(); // запускає Ollama якщо OLLAMA_BINARY вказано в .env
 
   const imapService = new ImapService(handleNewMail);
   imapService.start();
@@ -32,6 +34,7 @@ async function main() {
     logger.info('Shutting down...');
     imapService.stop();
     await stopBot();
+    stopOllama();
     process.exit(0);
   };
 

@@ -5,14 +5,15 @@ const crypto_1 = require("crypto");
 const db_1 = require("../../db");
 const logger_1 = require("../../utils/logger");
 const bot_service_1 = require("../telegram/bot.service");
+const store_detector_1 = require("../mail/store-detector");
+const parser_service_1 = require("../mail/parser.service");
+const templates_1 = require("../telegram/templates");
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // Затримка між відправками щоб не перевищити ліміт Telegram (30 msg/sec глобально)
 const SEND_DELAY_MS = 300;
-const store_detector_1 = require("../mail/store-detector");
-const parser_service_1 = require("../mail/parser.service");
-async function sendToUser(user, email, storeName) {
+async function sendToUser(user, text, images) {
     try {
-        const messageIds = await (0, bot_service_1.sendNotification)(user.telegram_chat_id, email, storeName);
+        const messageIds = await (0, bot_service_1.sendNotification)(user.telegram_chat_id, text, images);
         logger_1.logger.info({ userId: user.id, chatId: user.telegram_chat_id, role: user.role,
             name: `${user.last_name} ${user.first_name}`, receiveAll: !!user.receive_all }, 'Notification sent');
         return { ok: true, messageIds };
@@ -61,10 +62,13 @@ function logSends(logId, records, storeName) {
 async function dispatchNotification(email) {
     const db = (0, db_1.getDb)();
     const plainText = (0, parser_service_1.extractPlainText)(email);
-    const { cameraNumber } = (0, store_detector_1.parseEncodingDevice)(plainText);
     const store = (0, store_detector_1.detectStore)(email.subject, plainText);
     const storeName = store?.name ?? null;
     const storeId = store?.id ?? null;
+    // Витягуємо поля ОДИН раз (Ollama або regex) і будуємо текст
+    const eventFields = await (0, templates_1.extractEventDetails)(plainText);
+    const notificationText = (0, templates_1.buildNotificationText)(eventFields, storeName);
+    const images = email.attachments.filter(a => a.isImage);
     // 1. Охорона конкретного магазину
     const storeSecurityUsers = storeId
         ? db.prepare(`
@@ -86,7 +90,9 @@ async function dispatchNotification(email) {
       `).all([storeId])
         : [];
     logger_1.logger.info({
-        storeId, storeName, cameraNumber,
+        storeId, storeName,
+        cameraLabel: eventFields.cameraLabel,
+        personName: eventFields.personName,
         storeSecurity: storeSecurityUsers.length,
         globalSecurity: globalSecurityUsers.length,
         employees: employeeUsers.length,
@@ -94,17 +100,17 @@ async function dispatchNotification(email) {
     const records = [];
     // Порядок: охорона магазину → глобальна охорона → співробітники магазину
     for (const user of storeSecurityUsers) {
-        const res = await sendToUser(user, email, storeName);
+        const res = await sendToUser(user, notificationText, images);
         records.push({ user, role: 'security', ok: res.ok, messageIds: res.messageIds, error: res.error });
         await sleep(SEND_DELAY_MS);
     }
     for (const user of globalSecurityUsers) {
-        const res = await sendToUser(user, email, storeName);
+        const res = await sendToUser(user, notificationText, images);
         records.push({ user, role: 'security_global', ok: res.ok, messageIds: res.messageIds, error: res.error });
         await sleep(SEND_DELAY_MS);
     }
     for (const user of employeeUsers) {
-        const res = await sendToUser(user, email, storeName);
+        const res = await sendToUser(user, notificationText, images);
         records.push({ user, role: 'employee', ok: res.ok, messageIds: res.messageIds, error: res.error });
         await sleep(SEND_DELAY_MS);
     }
@@ -124,6 +130,6 @@ async function dispatchNotification(email) {
     const logId = Number(logResult.lastInsertRowid);
     if (records.length > 0)
         logSends(logId, records, storeName);
-    logger_1.logger.info({ logId, notified: notifiedIds.length, failed: failedCount, status, storeName, cameraNumber }, 'Dispatch completed');
+    logger_1.logger.info({ logId, notified: notifiedIds.length, failed: failedCount, status, storeName }, 'Dispatch completed');
 }
 //# sourceMappingURL=dispatcher.js.map

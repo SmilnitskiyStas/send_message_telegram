@@ -1,4 +1,3 @@
-import { ParsedEmail } from '../../types';
 export interface EventDetails {
     eventTime: string;
     storeNumber: string | null;
@@ -10,6 +9,7 @@ export interface EventDetails {
     gender: string | null;
 }
 export declare function parseEventDetails(body: string): EventDetails;
-export declare function buildNotificationText(email: ParsedEmail, storeName: string | null): string;
+export declare function extractEventDetails(body: string): Promise<EventDetails>;
+export declare function buildNotificationText(ev: EventDetails, storeName: string | null): string;
 export declare function buildRegistrationSuccessText(firstName: string, lastName: string, storeName: string | null, role: string): string;
 //# sourceMappingURL=templates.d.ts.map

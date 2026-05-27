@@ -1,9 +1,10 @@
-import { ParsedEmail } from '../../types';
+import { parseWithOllama } from '../ml/ollama.service';
+import { logger } from '../../utils/logger';
 
 export interface EventDetails {
   eventTime: string;
-  storeNumber: string | null;  // "37" з "37-254 M-37 FR 02"
-  cameraLabel: string | null;  // "FR 02" з "37-254 M-37 FR 02"
+  storeNumber: string | null;  // "32" з "M-32 FR 01"
+  cameraLabel: string | null;  // "FR 01" з "M-32 FR 01"
   targetId: string | null;
   personName: string | null;
   similarity: number | null;
@@ -11,10 +12,12 @@ export interface EventDetails {
   gender: string | null;
 }
 
+// ─── Regex fallback ───────────────────────────────────────────────────────────
+
 export function parseEventDetails(body: string): EventDetails {
   const get = (pattern: RegExp) => body.match(pattern)?.[1]?.trim() ?? null;
 
-  // "Encoding Device:9-254 M-32 FR 01" → store=32 (з M-32), recorder=254 (не показуємо), camera=FR 01
+  // "Encoding Device:9-254 M-32 FR 01" → store=32 (з M-32), camera=FR 01
   const deviceMatch = body.match(/Encoding Device\s*:\s*\d+-\d+\s+M-(\d+)\s+([\w][^\n\r,]*)/i);
 
   const simMatch = body.match(/Similarity:\s*(\d+)%/);
@@ -31,12 +34,41 @@ export function parseEventDetails(body: string): EventDetails {
   };
 }
 
+// ─── ML + fallback ────────────────────────────────────────────────────────────
+// Спочатку пробуємо Ollama, при невдачі — regex.
+// Поля з Ollama мають пріоритет, пропущені — доповнюємо regex.
+
+export async function extractEventDetails(body: string): Promise<EventDetails> {
+  const regexResult = parseEventDetails(body);
+
+  const aiResult = await parseWithOllama(body);
+  if (!aiResult) return regexResult;
+
+  // Зливаємо: AI-поле використовується якщо не null/порожній рядок
+  const merge = <T>(ai: T | undefined, rx: T): T =>
+    (ai !== null && ai !== undefined && ai !== '') ? ai : rx;
+
+  const merged: EventDetails = {
+    eventTime:   merge(aiResult.eventTime,   regexResult.eventTime),
+    storeNumber: merge(aiResult.storeNumber, regexResult.storeNumber),
+    cameraLabel: merge(aiResult.cameraLabel, regexResult.cameraLabel),
+    targetId:    merge(aiResult.targetId,    regexResult.targetId),
+    personName:  merge(aiResult.personName,  regexResult.personName),
+    similarity:  merge(aiResult.similarity,  regexResult.similarity),
+    ageGroup:    merge(aiResult.ageGroup,    regexResult.ageGroup),
+    gender:      merge(aiResult.gender,      regexResult.gender),
+  };
+
+  logger.debug({ aiResult, regexResult, merged }, 'Event details extracted (AI+regex merge)');
+  return merged;
+}
+
+// ─── Форматування повідомлення ────────────────────────────────────────────────
+
 export function buildNotificationText(
-  email: ParsedEmail,
+  ev: EventDetails,
   storeName: string | null,
 ): string {
-  const ev = parseEventDetails(email.textBody);
-
   const lines: string[] = [];
 
   lines.push('🚨 <b>Matched Face</b>');
@@ -54,11 +86,9 @@ export function buildNotificationText(
 
   lines.push('');
 
-  if (ev.personName) {
-    lines.push(`👤 <b>Особа:</b> ${ev.personName}`);
-  } else {
-    lines.push('👤 <b>Особа:</b> невідома');
-  }
+  lines.push(ev.personName
+    ? `👤 <b>Особа:</b> ${ev.personName}`
+    : '👤 <b>Особа:</b> невідома');
 
   if (ev.similarity !== null) lines.push(`📊 <b>Схожість:</b> ${ev.similarity}%`);
   if (ev.targetId)             lines.push(`🆔 <b>ID в базі:</b> ${ev.targetId}`);

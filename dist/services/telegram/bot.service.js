@@ -100,10 +100,8 @@ async function withRetry(fn, maxAttempts = 4) {
 }
 // ── Надсилання сповіщень ──────────────────────────────────────────────────────
 // Повертає масив message_id надісланих повідомлень (для подальшого видалення)
-async function sendNotification(chatId, email, storeName) {
+async function sendNotification(chatId, text, images) {
     const b = getBot();
-    const text = (0, templates_1.buildNotificationText)(email, storeName);
-    const images = email.attachments.filter((a) => a.isImage);
     if (images.length === 0) {
         const msg = await withRetry(() => b.api.sendMessage(chatId, text, { parse_mode: 'HTML' }));
         return [msg.message_id];

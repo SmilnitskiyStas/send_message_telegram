@@ -2,8 +2,8 @@ import { Bot, InputFile, InputMediaBuilder } from 'grammy';
 import { config } from '../../config';
 import { logger } from '../../utils/logger';
 import { getDb } from '../../db';
-import { ParsedEmail, User, Store } from '../../types';
-import { buildNotificationText, buildRegistrationSuccessText } from './templates';
+import { ParsedEmail, User, Store, EmailAttachment } from '../../types';
+import { buildRegistrationSuccessText } from './templates';
 
 let bot: Bot;
 
@@ -127,13 +127,10 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
 // Повертає масив message_id надісланих повідомлень (для подальшого видалення)
 export async function sendNotification(
   chatId: number,
-  email: ParsedEmail,
-  storeName: string | null,
+  text: string,
+  images: EmailAttachment[],
 ): Promise<number[]> {
   const b = getBot();
-  const text = buildNotificationText(email, storeName);
-
-  const images = email.attachments.filter((a) => a.isImage);
 
   if (images.length === 0) {
     const msg = await withRetry(() => b.api.sendMessage(chatId, text, { parse_mode: 'HTML' }));

@@ -2,13 +2,14 @@ import { randomBytes } from 'crypto';
 import { getDb } from '../../db';
 import { logger } from '../../utils/logger';
 import { sendNotification } from '../telegram/bot.service';
+import { detectStore } from '../mail/store-detector';
+import { extractPlainText } from '../mail/parser.service';
+import { extractEventDetails, buildNotificationText } from '../telegram/templates';
+import { ParsedEmail, User, Store, EmailAttachment } from '../../types';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 // Затримка між відправками щоб не перевищити ліміт Telegram (30 msg/sec глобально)
 const SEND_DELAY_MS = 300;
-import { detectStore, parseEncodingDevice } from '../mail/store-detector';
-import { extractPlainText } from '../mail/parser.service';
-import { ParsedEmail, User, Store } from '../../types';
 
 interface SendRecord {
   user: User;
@@ -20,11 +21,11 @@ interface SendRecord {
 
 async function sendToUser(
   user: User,
-  email: ParsedEmail,
-  storeName: string | null,
+  text: string,
+  images: EmailAttachment[],
 ): Promise<{ ok: boolean; messageIds?: number[]; error?: string }> {
   try {
-    const messageIds = await sendNotification(user.telegram_chat_id!, email, storeName);
+    const messageIds = await sendNotification(user.telegram_chat_id!, text, images);
     logger.info(
       { userId: user.id, chatId: user.telegram_chat_id, role: user.role,
         name: `${user.last_name} ${user.first_name}`, receiveAll: !!user.receive_all },
@@ -86,11 +87,15 @@ function logSends(logId: number, records: SendRecord[], storeName: string | null
 export async function dispatchNotification(email: ParsedEmail): Promise<void> {
   const db = getDb();
   const plainText = extractPlainText(email);
-  const { cameraNumber } = parseEncodingDevice(plainText);
 
   const store: Store | null = detectStore(email.subject, plainText);
   const storeName = store?.name ?? null;
   const storeId   = store?.id ?? null;
+
+  // Витягуємо поля ОДИН раз (Ollama або regex) і будуємо текст
+  const eventFields = await extractEventDetails(plainText);
+  const notificationText = buildNotificationText(eventFields, storeName);
+  const images = email.attachments.filter(a => a.isImage);
 
   // 1. Охорона конкретного магазину
   const storeSecurityUsers: User[] = storeId
@@ -116,7 +121,9 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
     : [];
 
   logger.info({
-    storeId, storeName, cameraNumber,
+    storeId, storeName,
+    cameraLabel: eventFields.cameraLabel,
+    personName: eventFields.personName,
     storeSecurity: storeSecurityUsers.length,
     globalSecurity: globalSecurityUsers.length,
     employees: employeeUsers.length,
@@ -126,17 +133,17 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
 
   // Порядок: охорона магазину → глобальна охорона → співробітники магазину
   for (const user of storeSecurityUsers) {
-    const res = await sendToUser(user, email, storeName);
+    const res = await sendToUser(user, notificationText, images);
     records.push({ user, role: 'security', ok: res.ok, messageIds: res.messageIds, error: res.error });
     await sleep(SEND_DELAY_MS);
   }
   for (const user of globalSecurityUsers) {
-    const res = await sendToUser(user, email, storeName);
+    const res = await sendToUser(user, notificationText, images);
     records.push({ user, role: 'security_global', ok: res.ok, messageIds: res.messageIds, error: res.error });
     await sleep(SEND_DELAY_MS);
   }
   for (const user of employeeUsers) {
-    const res = await sendToUser(user, email, storeName);
+    const res = await sendToUser(user, notificationText, images);
     records.push({ user, role: 'employee', ok: res.ok, messageIds: res.messageIds, error: res.error });
     await sleep(SEND_DELAY_MS);
   }
@@ -162,7 +169,7 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
   if (records.length > 0) logSends(logId, records, storeName);
 
   logger.info(
-    { logId, notified: notifiedIds.length, failed: failedCount, status, storeName, cameraNumber },
+    { logId, notified: notifiedIds.length, failed: failedCount, status, storeName },
     'Dispatch completed',
   );
 }

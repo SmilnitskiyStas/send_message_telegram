@@ -7,6 +7,7 @@ const imap_service_1 = require("./services/mail/imap.service");
 const bot_service_1 = require("./services/telegram/bot.service");
 const message_cleanup_1 = require("./services/telegram/message-cleanup");
 const dispatcher_1 = require("./services/notification/dispatcher");
+const ollama_service_1 = require("./services/ml/ollama.service");
 const server_1 = require("./api/server");
 async function handleNewMail(email) {
     await (0, dispatcher_1.dispatchNotification)(email);
@@ -20,12 +21,14 @@ async function main() {
     await (0, server_1.startServer)(app);
     await (0, bot_service_1.startBot)();
     (0, message_cleanup_1.startMessageCleanup)();
+    await (0, ollama_service_1.startOllama)(); // запускає Ollama якщо OLLAMA_BINARY вказано в .env
     const imapService = new imap_service_1.ImapService(handleNewMail);
     imapService.start();
     const shutdown = async () => {
         logger_1.logger.info('Shutting down...');
         imapService.stop();
         await (0, bot_service_1.stopBot)();
+        (0, ollama_service_1.stopOllama)();
         process.exit(0);
     };
     process.on('SIGINT', shutdown);
