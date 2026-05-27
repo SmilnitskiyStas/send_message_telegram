@@ -106,6 +106,14 @@ export class ImapService {
             // Зберігаємо UID в нашій БД — більше не обробляємо цей лист
             this.markProcessed(msg.uid, parsed.subject);
             processed++;
+
+            // Позначаємо лист як прочитаний у поштовій скриньці
+            try {
+              await client.messageFlagsAdd({ uid: msg.uid }, ['\\Seen'], { uid: true });
+              logger.debug({ uid: msg.uid }, 'Email marked as read');
+            } catch (flagErr) {
+              logger.warn({ flagErr, uid: msg.uid }, 'Could not mark email as read');
+            }
           } catch (err) {
             logger.error({ err, uid: msg.uid }, 'Failed to process email');
           }
