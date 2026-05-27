@@ -8,6 +8,8 @@ export declare class ImapService {
     start(): void;
     stop(): void;
     private createClient;
+    private isProcessed;
+    private markProcessed;
     private pollOnce;
 }
 //# sourceMappingURL=imap.service.d.ts.map

@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS message_sends (
   sent_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Оброблені листи (щоб не залежати від прапора \Seen на IMAP)
+CREATE TABLE IF NOT EXISTS processed_emails (
+  uid INTEGER PRIMARY KEY,
+  mail_subject TEXT,
+  processed_at TEXT DEFAULT (datetime('now'))
+);
+
 -- Адмін-сесії
 CREATE TABLE IF NOT EXISTS admin_sessions (
   id TEXT PRIMARY KEY,
