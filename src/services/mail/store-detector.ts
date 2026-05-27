@@ -2,9 +2,9 @@ import { getDb } from '../../db';
 import { logger } from '../../utils/logger';
 import { Store } from '../../types';
 
-// "Encoding Device:37-254 M-37 FR 02" → storeNumber="37", cameraNumber="FR 02"
+// "Encoding Device:9-254 M-32 FR 01" → storeNumber="32" (з M-32), cameraNumber="FR 01"
 export function parseEncodingDevice(body: string): { storeNumber: string | null; cameraNumber: string | null } {
-  const match = body.match(/Encoding Device\s*:\s*(\d+)-\d+\s+\S+\s+([\w][^\n\r,]*)/i);
+  const match = body.match(/Encoding Device\s*:\s*\d+-\d+\s+M-(\d+)\s+([\w][^\n\r,]*)/i);
   return {
     storeNumber: match?.[1]?.trim() ?? null,
     cameraNumber: match?.[2]?.trim() ?? null,
