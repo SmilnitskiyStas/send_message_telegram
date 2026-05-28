@@ -1,22 +1,20 @@
 import cron from 'node-cron';
 import { getBot } from './bot.service';
-import { getDb } from '../../db';
+import { dbAll, dbRun } from '../../db';
 import { config } from '../../config';
 import { logger } from '../../utils/logger';
 
 async function deleteOldMessages(): Promise<void> {
-  const db = getDb();
-
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - config.MESSAGE_DELETE_AFTER_DAYS);
   const cutoffStr = cutoff.toISOString();
 
-  const rows: any[] = db.prepare(`
+  const rows: any[] = dbAll(`
     SELECT id, chat_id, telegram_message_ids
     FROM message_sends
     WHERE telegram_message_ids IS NOT NULL
       AND sent_at < ?
-  `).all([cutoffStr]);
+  `, [cutoffStr]);
 
   if (rows.length === 0) {
     logger.info({ cutoffDays: config.MESSAGE_DELETE_AFTER_DAYS }, 'Message cleanup: nothing to delete');
@@ -46,7 +44,7 @@ async function deleteOldMessages(): Promise<void> {
     }
 
     // Прибираємо message_ids щоб не намагатись видалити повторно
-    db.prepare('UPDATE message_sends SET telegram_message_ids = NULL WHERE id = ?').run([row.id]);
+    dbRun('UPDATE message_sends SET telegram_message_ids = NULL WHERE id = ?', [row.id]);
   }
 
   logger.info(

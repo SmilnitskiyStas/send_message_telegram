@@ -10,16 +10,15 @@ const db_1 = require("../../db");
 const config_1 = require("../../config");
 const logger_1 = require("../../utils/logger");
 async function deleteOldMessages() {
-    const db = (0, db_1.getDb)();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - config_1.config.MESSAGE_DELETE_AFTER_DAYS);
     const cutoffStr = cutoff.toISOString();
-    const rows = db.prepare(`
+    const rows = (0, db_1.dbAll)(`
     SELECT id, chat_id, telegram_message_ids
     FROM message_sends
     WHERE telegram_message_ids IS NOT NULL
       AND sent_at < ?
-  `).all([cutoffStr]);
+  `, [cutoffStr]);
     if (rows.length === 0) {
         logger_1.logger.info({ cutoffDays: config_1.config.MESSAGE_DELETE_AFTER_DAYS }, 'Message cleanup: nothing to delete');
         return;
@@ -46,7 +45,7 @@ async function deleteOldMessages() {
             }
         }
         // Прибираємо message_ids щоб не намагатись видалити повторно
-        db.prepare('UPDATE message_sends SET telegram_message_ids = NULL WHERE id = ?').run([row.id]);
+        (0, db_1.dbRun)('UPDATE message_sends SET telegram_message_ids = NULL WHERE id = ?', [row.id]);
     }
     logger_1.logger.info({ deleted, skipped, total: rows.length, cutoffDays: config_1.config.MESSAGE_DELETE_AFTER_DAYS }, 'Message cleanup completed');
 }
