@@ -24,8 +24,8 @@ async function sendToUser(user, text, images) {
         if (errMsg.includes('USER_IS_BLOCKED') || errMsg.includes('bot was blocked by the user')) {
             try {
                 const newToken = (0, crypto_1.randomBytes)(24).toString('hex');
-                (0, db_1.getDb)().prepare(`UPDATE users SET telegram_chat_id = NULL, telegram_username = NULL,
-           registration_token = ?, updated_at = datetime('now') WHERE id = ?`).run([newToken, user.id]);
+                (0, db_1.dbRun)(`UPDATE users SET telegram_chat_id = NULL, telegram_username = NULL,
+           registration_token = ?, updated_at = datetime('now') WHERE id = ?`, [newToken, user.id]);
                 logger_1.logger.warn({ userId: user.id, chatId: user.telegram_chat_id, name: `${user.last_name} ${user.first_name}` }, 'User blocked the bot — chat_id cleared, new registration token generated');
             }
             catch (dbErr) {
@@ -38,29 +38,21 @@ async function sendToUser(user, text, images) {
     }
 }
 function logSends(logId, records, storeName) {
-    const db = (0, db_1.getDb)();
-    const stmt = db.prepare(`
+    const sql = `
     INSERT INTO message_sends
       (log_id, user_id, user_full_name, chat_id, role, store_name, status, error_message, telegram_message_ids)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  `;
     for (const r of records) {
         const fullName = `${r.user.last_name} ${r.user.first_name}${r.user.middle_name ? ' ' + r.user.middle_name : ''}`;
-        stmt.run([
-            logId,
-            r.user.id,
-            fullName,
-            r.user.telegram_chat_id,
-            r.role,
-            storeName,
-            r.ok ? 'sent' : 'failed',
-            r.error ?? null,
-            r.messageIds ? JSON.stringify(r.messageIds) : null,
+        (0, db_1.dbRun)(sql, [
+            logId, r.user.id, fullName, r.user.telegram_chat_id,
+            r.role, storeName, r.ok ? 'sent' : 'failed',
+            r.error ?? null, r.messageIds ? JSON.stringify(r.messageIds) : null,
         ]);
     }
 }
 async function dispatchNotification(email) {
-    const db = (0, db_1.getDb)();
     const plainText = (0, parser_service_1.extractPlainText)(email);
     const store = (0, store_detector_1.detectStore)(email.subject, plainText);
     const storeName = store?.name ?? null;
@@ -71,23 +63,19 @@ async function dispatchNotification(email) {
     const images = email.attachments.filter(a => a.isImage);
     // 1. Охорона конкретного магазину
     const storeSecurityUsers = storeId
-        ? db.prepare(`
-        SELECT * FROM users
-        WHERE store_id = ? AND role = 'security' AND is_active = 1 AND telegram_chat_id IS NOT NULL
-      `).all([storeId])
+        ? (0, db_1.dbAll)(`SELECT * FROM users
+             WHERE store_id = ? AND role = 'security' AND is_active = 1 AND telegram_chat_id IS NOT NULL`, [storeId])
         : [];
     // 2. Охорона з receive_all=1 (всі магазини), яких ще немає в списку вище
     const storeSecurityIds = new Set(storeSecurityUsers.map(u => u.id));
-    const globalSecurityUsers = db.prepare(`
+    const globalSecurityUsers = ((0, db_1.dbAll)(`
     SELECT * FROM users
     WHERE role = 'security' AND receive_all = 1 AND is_active = 1 AND telegram_chat_id IS NOT NULL
-  `).all([]).filter(u => !storeSecurityIds.has(u.id));
+  `)).filter(u => !storeSecurityIds.has(u.id));
     // 3. Інші співробітники магазину (employee)
     const employeeUsers = storeId
-        ? db.prepare(`
-        SELECT * FROM users
-        WHERE store_id = ? AND role = 'employee' AND is_active = 1 AND telegram_chat_id IS NOT NULL
-      `).all([storeId])
+        ? (0, db_1.dbAll)(`SELECT * FROM users
+             WHERE store_id = ? AND role = 'employee' AND is_active = 1 AND telegram_chat_id IS NOT NULL`, [storeId])
         : [];
     logger_1.logger.info({
         storeId, storeName,
@@ -119,11 +107,11 @@ async function dispatchNotification(email) {
     const total = storeSecurityUsers.length + globalSecurityUsers.length + employeeUsers.length;
     const status = total === 0 ? 'no_recipients' :
         notifiedIds.length === 0 ? 'failed' : 'sent';
-    const logResult = db.prepare(`
+    const logResult = (0, db_1.dbRun)(`
     INSERT INTO notification_log
       (mail_subject, mail_from, mail_received_at, store_id, users_notified, status)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run([
+  `, [
         email.subject, email.from, email.date.toISOString(),
         storeId, JSON.stringify(notifiedIds), status,
     ]);

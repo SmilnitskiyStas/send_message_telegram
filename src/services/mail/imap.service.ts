@@ -1,7 +1,7 @@
 import { ImapFlow } from 'imapflow';
 import { config } from '../../config';
 import { logger } from '../../utils/logger';
-import { getDb } from '../../db';
+import { dbGet, dbRun } from '../../db';
 import { ParsedEmail } from '../../types';
 import { parseRawEmail } from './parser.service';
 
@@ -56,16 +56,11 @@ export class ImapService {
   }
 
   private isProcessed(uid: number): boolean {
-    const db = getDb();
-    const row = db.prepare('SELECT uid FROM processed_emails WHERE uid = ?').get([uid]);
-    return !!row;
+    return !!dbGet('SELECT uid FROM processed_emails WHERE uid = ?', [uid]);
   }
 
   private markProcessed(uid: number, subject: string): void {
-    const db = getDb();
-    db.prepare(
-      'INSERT OR IGNORE INTO processed_emails (uid, mail_subject) VALUES (?, ?)',
-    ).run([uid, subject]);
+    dbRun('INSERT OR IGNORE INTO processed_emails (uid, mail_subject) VALUES (?, ?)', [uid, subject]);
   }
 
   // ─── Фаза 1: IMAP ────────────────────────────────────────────────────────────

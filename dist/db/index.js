@@ -35,6 +35,9 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDb = getDb;
 exports.closeDb = closeDb;
+exports.dbGet = dbGet;
+exports.dbRun = dbRun;
+exports.dbAll = dbAll;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const config_1 = require("../config");
@@ -66,6 +69,36 @@ function closeDb() {
     if (db) {
         db.close();
         logger_1.logger.info('Database connection closed');
+    }
+}
+// ── Хелпери з авто-finalize ───────────────────────────────────────────────────
+// node-sqlite3-wasm виділяє пам'ять у WASM heap і НЕ звільняє її автоматично.
+// Кожен db.prepare() без .finalize() — leak. Використовуйте ці хелпери.
+function dbGet(sql, params = []) {
+    const stmt = getDb().prepare(sql);
+    try {
+        return stmt.get(params);
+    }
+    finally {
+        stmt.finalize();
+    }
+}
+function dbRun(sql, params = []) {
+    const stmt = getDb().prepare(sql);
+    try {
+        return stmt.run(params);
+    }
+    finally {
+        stmt.finalize();
+    }
+}
+function dbAll(sql, params = []) {
+    const stmt = getDb().prepare(sql);
+    try {
+        return stmt.all(params);
+    }
+    finally {
+        stmt.finalize();
     }
 }
 //# sourceMappingURL=index.js.map

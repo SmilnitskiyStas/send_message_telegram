@@ -42,13 +42,10 @@ class ImapService {
         });
     }
     isProcessed(uid) {
-        const db = (0, db_1.getDb)();
-        const row = db.prepare('SELECT uid FROM processed_emails WHERE uid = ?').get([uid]);
-        return !!row;
+        return !!(0, db_1.dbGet)('SELECT uid FROM processed_emails WHERE uid = ?', [uid]);
     }
     markProcessed(uid, subject) {
-        const db = (0, db_1.getDb)();
-        db.prepare('INSERT OR IGNORE INTO processed_emails (uid, mail_subject) VALUES (?, ?)').run([uid, subject]);
+        (0, db_1.dbRun)('INSERT OR IGNORE INTO processed_emails (uid, mail_subject) VALUES (?, ?)', [uid, subject]);
     }
     // ─── Фаза 1: IMAP ────────────────────────────────────────────────────────────
     // Підключається, парсить нові листи, мітить прочитаними, відключається.

@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { getDb } from '../../db';
+import { dbRun, dbAll } from '../../db';
 import { logger } from '../../utils/logger';
 import { sendNotification } from '../telegram/bot.service';
 import { detectStore } from '../mail/store-detector';
@@ -39,10 +39,11 @@ async function sendToUser(
     if (errMsg.includes('USER_IS_BLOCKED') || errMsg.includes('bot was blocked by the user')) {
       try {
         const newToken = randomBytes(24).toString('hex');
-        getDb().prepare(
+        dbRun(
           `UPDATE users SET telegram_chat_id = NULL, telegram_username = NULL,
            registration_token = ?, updated_at = datetime('now') WHERE id = ?`,
-        ).run([newToken, user.id]);
+          [newToken, user.id],
+        );
         logger.warn(
           { userId: user.id, chatId: user.telegram_chat_id, name: `${user.last_name} ${user.first_name}` },
           'User blocked the bot — chat_id cleared, new registration token generated',
@@ -62,30 +63,22 @@ async function sendToUser(
 }
 
 function logSends(logId: number, records: SendRecord[], storeName: string | null): void {
-  const db = getDb();
-  const stmt = db.prepare(`
+  const sql = `
     INSERT INTO message_sends
       (log_id, user_id, user_full_name, chat_id, role, store_name, status, error_message, telegram_message_ids)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  `;
   for (const r of records) {
     const fullName = `${r.user.last_name} ${r.user.first_name}${r.user.middle_name ? ' ' + r.user.middle_name : ''}`;
-    stmt.run([
-      logId,
-      r.user.id,
-      fullName,
-      r.user.telegram_chat_id,
-      r.role,
-      storeName,
-      r.ok ? 'sent' : 'failed',
-      r.error ?? null,
-      r.messageIds ? JSON.stringify(r.messageIds) : null,
+    dbRun(sql, [
+      logId, r.user.id, fullName, r.user.telegram_chat_id,
+      r.role, storeName, r.ok ? 'sent' : 'failed',
+      r.error ?? null, r.messageIds ? JSON.stringify(r.messageIds) : null,
     ]);
   }
 }
 
 export async function dispatchNotification(email: ParsedEmail): Promise<void> {
-  const db = getDb();
   const plainText = extractPlainText(email);
 
   const store: Store | null = detectStore(email.subject, plainText);
@@ -99,25 +92,23 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
 
   // 1. Охорона конкретного магазину
   const storeSecurityUsers: User[] = storeId
-    ? db.prepare(`
-        SELECT * FROM users
-        WHERE store_id = ? AND role = 'security' AND is_active = 1 AND telegram_chat_id IS NOT NULL
-      `).all([storeId])
+    ? dbAll(`SELECT * FROM users
+             WHERE store_id = ? AND role = 'security' AND is_active = 1 AND telegram_chat_id IS NOT NULL`,
+            [storeId])
     : [];
 
   // 2. Охорона з receive_all=1 (всі магазини), яких ще немає в списку вище
   const storeSecurityIds = new Set(storeSecurityUsers.map(u => u.id));
-  const globalSecurityUsers: User[] = (db.prepare(`
+  const globalSecurityUsers: User[] = (dbAll<User>(`
     SELECT * FROM users
     WHERE role = 'security' AND receive_all = 1 AND is_active = 1 AND telegram_chat_id IS NOT NULL
-  `).all([]) as User[]).filter(u => !storeSecurityIds.has(u.id));
+  `)).filter(u => !storeSecurityIds.has(u.id));
 
   // 3. Інші співробітники магазину (employee)
   const employeeUsers: User[] = storeId
-    ? db.prepare(`
-        SELECT * FROM users
-        WHERE store_id = ? AND role = 'employee' AND is_active = 1 AND telegram_chat_id IS NOT NULL
-      `).all([storeId])
+    ? dbAll(`SELECT * FROM users
+             WHERE store_id = ? AND role = 'employee' AND is_active = 1 AND telegram_chat_id IS NOT NULL`,
+            [storeId])
     : [];
 
   logger.info({
@@ -156,11 +147,11 @@ export async function dispatchNotification(email: ParsedEmail): Promise<void> {
     total === 0              ? 'no_recipients' :
     notifiedIds.length === 0 ? 'failed'        : 'sent';
 
-  const logResult = db.prepare(`
+  const logResult = dbRun(`
     INSERT INTO notification_log
       (mail_subject, mail_from, mail_received_at, store_id, users_notified, status)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run([
+  `, [
     email.subject, email.from, email.date.toISOString(),
     storeId, JSON.stringify(notifiedIds), status,
   ]);
