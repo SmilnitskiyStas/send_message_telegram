@@ -14,8 +14,9 @@ export interface EventDetails {
 export function extractEventDetails(body: string): EventDetails {
   const get = (pattern: RegExp) => body.match(pattern)?.[1]?.trim() ?? null;
 
-  // "Encoding Device:9-254 M-32 FR 01" → store=32 (з M-32), camera=FR 01
-  const deviceMatch = body.match(/Encoding Device\s*:\s*\d+-\d+\s+M-(\d+)\s+([\w][^\n\r,]*)/i);
+  // "Encoding Device:9-254 M-32 FR 01" або "Encoding Device:RC ovoshy M-6 FR 13"
+  // → store=32/6 (з M-NN), camera=FR 01/FR 13
+  const deviceMatch = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
 
   const simMatch = body.match(/Similarity:\s*(\d+)%/);
 

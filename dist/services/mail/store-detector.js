@@ -4,22 +4,24 @@ exports.parseEncodingDevice = parseEncodingDevice;
 exports.detectStore = detectStore;
 const db_1 = require("../../db");
 const logger_1 = require("../../utils/logger");
-// "Encoding Device:9-254 M-32 FR 01" → storeNumber="32" (з M-32), cameraNumber="FR 01"
+// Підтримувані формати:
+//   "Encoding Device:9-254 M-32 FR 01"
+//   "Encoding Device:RC ovoshy M-6 FR 13"
+// → storeNumber="32"/"6" (з M-NN), cameraLabel="FR 01"/"FR 13"
 function parseEncodingDevice(body) {
-    const match = body.match(/Encoding Device\s*:\s*\d+-\d+\s+M-(\d+)\s+([\w][^\n\r,]*)/i);
+    const match = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
     return {
         storeNumber: match?.[1]?.trim() ?? null,
-        cameraNumber: match?.[2]?.trim() ?? null,
+        cameraLabel: match?.[2]?.trim() ?? null,
     };
 }
 function detectStore(subject, textBody) {
-    const db = (0, db_1.getDb)();
-    const stores = db.prepare('SELECT id, name, code, address FROM stores').all();
+    const stores = (0, db_1.dbAll)('SELECT id, name, code, address FROM stores');
     if (stores.length === 0) {
         logger_1.logger.warn('No stores in database — cannot detect store from email');
         return null;
     }
-    // Основний спосіб: числовий код магазину з поля "Encoding Device: 12-252 ..."
+    // Основний спосіб: числовий код з поля "Encoding Device: ... M-NN ..."
     const { storeNumber } = parseEncodingDevice(textBody);
     if (storeNumber) {
         const byNumber = stores.find((s) => s.code === storeNumber);
@@ -28,11 +30,12 @@ function detectStore(subject, textBody) {
             return byNumber;
         }
     }
-    // Fallback: шукаємо назву або код у тексті листа
+    // Fallback: шукаємо назву магазину у тексті листа (тільки назву, не код —
+    // щоб не спрацьовував "1" у Target ID:11432 тощо)
     const lowerText = `${subject} ${textBody}`.toLowerCase();
     for (const store of stores) {
-        if (lowerText.includes(store.name.toLowerCase()) || lowerText.includes(store.code.toLowerCase())) {
-            logger_1.logger.info({ storeId: store.id, storeName: store.name }, 'Store detected by name/code in email text');
+        if (lowerText.includes(store.name.toLowerCase())) {
+            logger_1.logger.info({ storeId: store.id, storeName: store.name }, 'Store detected by name in email text');
             return store;
         }
     }

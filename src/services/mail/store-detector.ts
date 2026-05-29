@@ -1,26 +1,28 @@
-import { getDb } from '../../db';
+import { dbAll } from '../../db';
 import { logger } from '../../utils/logger';
 import { Store } from '../../types';
 
-// "Encoding Device:9-254 M-32 FR 01" → storeNumber="32" (з M-32), cameraNumber="FR 01"
-export function parseEncodingDevice(body: string): { storeNumber: string | null; cameraNumber: string | null } {
-  const match = body.match(/Encoding Device\s*:\s*\d+-\d+\s+M-(\d+)\s+([\w][^\n\r,]*)/i);
+// Підтримувані формати:
+//   "Encoding Device:9-254 M-32 FR 01"
+//   "Encoding Device:RC ovoshy M-6 FR 13"
+// → storeNumber="32"/"6" (з M-NN), cameraLabel="FR 01"/"FR 13"
+export function parseEncodingDevice(body: string): { storeNumber: string | null; cameraLabel: string | null } {
+  const match = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
   return {
     storeNumber: match?.[1]?.trim() ?? null,
-    cameraNumber: match?.[2]?.trim() ?? null,
+    cameraLabel:  match?.[2]?.trim() ?? null,
   };
 }
 
 export function detectStore(subject: string, textBody: string): Store | null {
-  const db = getDb();
-  const stores: Store[] = db.prepare('SELECT id, name, code, address FROM stores').all();
+  const stores: Store[] = dbAll('SELECT id, name, code, address FROM stores');
 
   if (stores.length === 0) {
     logger.warn('No stores in database — cannot detect store from email');
     return null;
   }
 
-  // Основний спосіб: числовий код магазину з поля "Encoding Device: 12-252 ..."
+  // Основний спосіб: числовий код з поля "Encoding Device: ... M-NN ..."
   const { storeNumber } = parseEncodingDevice(textBody);
   if (storeNumber) {
     const byNumber = stores.find((s) => s.code === storeNumber);
@@ -33,13 +35,14 @@ export function detectStore(subject: string, textBody: string): Store | null {
     }
   }
 
-  // Fallback: шукаємо назву або код у тексті листа
+  // Fallback: шукаємо назву магазину у тексті листа (тільки назву, не код —
+  // щоб не спрацьовував "1" у Target ID:11432 тощо)
   const lowerText = `${subject} ${textBody}`.toLowerCase();
   for (const store of stores) {
-    if (lowerText.includes(store.name.toLowerCase()) || lowerText.includes(store.code.toLowerCase())) {
+    if (lowerText.includes(store.name.toLowerCase())) {
       logger.info(
         { storeId: store.id, storeName: store.name },
-        'Store detected by name/code in email text',
+        'Store detected by name in email text',
       );
       return store;
     }
