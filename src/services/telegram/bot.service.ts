@@ -474,8 +474,44 @@ export async function sendNotification(
     }),
   );
 
-  const msgs = await withRetry(() => b.api.sendMediaGroup(chatId, media));
-  return msgs.map((m) => m.message_id);
+  // Спочатку пробуємо як media group
+  try {
+    const msgs = await withRetry(() => b.api.sendMediaGroup(chatId, media));
+    return msgs.map((m) => m.message_id);
+  } catch (groupErr: any) {
+    // IMAGE_PROCESS_FAILED або інша помилка — пробуємо кожне фото окремо
+    logger.warn(
+      { chatId, imageCount: images.length, err: groupErr?.message },
+      'sendMediaGroup failed, falling back to individual photo sends',
+    );
+  }
+
+  // Fallback: надсилаємо по одному, пропускаємо проблемні
+  const messageIds: number[] = [];
+  let captionSent = false;
+  for (const img of images) {
+    try {
+      const caption = captionSent ? undefined : text;
+      const msg = await b.api.sendPhoto(
+        chatId,
+        new InputFile(img.content, img.filename),
+        { caption, parse_mode: caption ? 'HTML' : undefined },
+      );
+      messageIds.push(msg.message_id);
+      captionSent = true;
+    } catch (imgErr: any) {
+      logger.warn({ chatId, filename: img.filename, err: imgErr?.message }, 'Skipping bad image');
+    }
+  }
+
+  // Якщо жодне фото не пройшло — надсилаємо хоча б текст
+  if (messageIds.length === 0) {
+    logger.warn({ chatId }, 'All images failed, sending text-only notification');
+    const msg = await withRetry(() => b.api.sendMessage(chatId, text, { parse_mode: 'HTML' }));
+    return [msg.message_id];
+  }
+
+  return messageIds;
 }
 
 export async function sendTextMessage(chatId: number, text: string): Promise<void> {
