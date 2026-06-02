@@ -4,16 +4,23 @@ exports.parseEncodingDevice = parseEncodingDevice;
 exports.detectStore = detectStore;
 const db_1 = require("../../db");
 const logger_1 = require("../../utils/logger");
-// Підтримувані формати:
-//   "Encoding Device:9-254 M-32 FR 01"
-//   "Encoding Device:RC ovoshy M-6 FR 13"
-// → storeNumber="32"/"6" (з M-NN), cameraLabel="FR 01"/"FR 13"
+// Підтримувані формати поля "Encoding Device":
+//   "9-254 M-32 FR 01"       → store=32,  camera="FR 01"
+//   "RC ovoshy M-6 FR 13"    → store=6,   camera="FR 13"
+//   "7-254 24 FR_7-254"      → store=24,  camera="FR_7-254"
 function parseEncodingDevice(body) {
-    const match = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
-    return {
-        storeNumber: match?.[1]?.trim() ?? null,
-        cameraLabel: match?.[2]?.trim() ?? null,
-    };
+    // Формат 1/2: є M-NN (будь-який префікс перед M-)
+    const mMatch = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
+    if (mMatch) {
+        return { storeNumber: mMatch[1].trim(), cameraLabel: mMatch[2].trim() };
+    }
+    // Формат 3: NVR-ID (цифри-цифри) потім номер магазину потім камера
+    // "Encoding Device:7-254 24 FR_7-254"
+    const nvrMatch = body.match(/Encoding Device\s*:\s*\d+-\d+\s+(\d+)\s+([\w][^\n\r,]*)/i);
+    if (nvrMatch) {
+        return { storeNumber: nvrMatch[1].trim(), cameraLabel: nvrMatch[2].trim() };
+    }
+    return { storeNumber: null, cameraLabel: null };
 }
 function detectStore(subject, textBody) {
     const stores = (0, db_1.dbAll)('SELECT id, name, code, address FROM stores');

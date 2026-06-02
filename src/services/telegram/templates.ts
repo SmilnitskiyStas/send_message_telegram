@@ -1,3 +1,5 @@
+import { parseEncodingDevice } from '../mail/store-detector';
+
 export interface EventDetails {
   eventTime: string;
   storeNumber: string | null;  // "32" з "M-32 FR 01"
@@ -14,16 +16,13 @@ export interface EventDetails {
 export function extractEventDetails(body: string): EventDetails {
   const get = (pattern: RegExp) => body.match(pattern)?.[1]?.trim() ?? null;
 
-  // "Encoding Device:9-254 M-32 FR 01" або "Encoding Device:RC ovoshy M-6 FR 13"
-  // → store=32/6 (з M-NN), camera=FR 01/FR 13
-  const deviceMatch = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
-
+  const { storeNumber, cameraLabel } = parseEncodingDevice(body);
   const simMatch = body.match(/Similarity:\s*(\d+)%/);
 
   return {
     eventTime:    get(/Event Time:\s*([^\n]+)/) ?? '',
-    storeNumber:  deviceMatch?.[1]?.trim() ?? null,
-    cameraLabel:  deviceMatch?.[2]?.trim() ?? null,
+    storeNumber,
+    cameraLabel,
     targetId:     get(/Target ID:\s*(\d+)/),
     personName:   get(/Person Name:\s*([^,\n]+)/),
     similarity:   simMatch ? parseInt(simMatch[1]) : null,

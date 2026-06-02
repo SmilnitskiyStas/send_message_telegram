@@ -3,17 +3,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.extractEventDetails = extractEventDetails;
 exports.buildNotificationText = buildNotificationText;
 exports.buildRegistrationSuccessText = buildRegistrationSuccessText;
+const store_detector_1 = require("../mail/store-detector");
 // ─── Regex парсинг ───────────────────────────────────────────────────────────
 function extractEventDetails(body) {
     const get = (pattern) => body.match(pattern)?.[1]?.trim() ?? null;
-    // "Encoding Device:9-254 M-32 FR 01" або "Encoding Device:RC ovoshy M-6 FR 13"
-    // → store=32/6 (з M-NN), camera=FR 01/FR 13
-    const deviceMatch = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
+    const { storeNumber, cameraLabel } = (0, store_detector_1.parseEncodingDevice)(body);
     const simMatch = body.match(/Similarity:\s*(\d+)%/);
     return {
         eventTime: get(/Event Time:\s*([^\n]+)/) ?? '',
-        storeNumber: deviceMatch?.[1]?.trim() ?? null,
-        cameraLabel: deviceMatch?.[2]?.trim() ?? null,
+        storeNumber,
+        cameraLabel,
         targetId: get(/Target ID:\s*(\d+)/),
         personName: get(/Person Name:\s*([^,\n]+)/),
         similarity: simMatch ? parseInt(simMatch[1]) : null,
