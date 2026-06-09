@@ -5,17 +5,22 @@ exports.detectStore = detectStore;
 const db_1 = require("../../db");
 const logger_1 = require("../../utils/logger");
 // Підтримувані формати поля "Encoding Device":
-//   "9-254 M-32 FR 01"       → store=32,  camera="FR 01"
-//   "RC ovoshy M-6 FR 13"    → store=6,   camera="FR 13"
-//   "7-254 24 FR_7-254"      → store=24,  camera="FR_7-254"
+//   "9-254 M-32 FR 01"       → store=32,  camera="FR 01"   (M-NN)
+//   "RC ovoshy M-6 FR 13"    → store=6,   camera="FR 13"   (M-NN)
+//   "9-253 M9-1 FR"          → store=9,   camera="FR"      (MNN-суфікс)
+//   "7-254 24 FR_7-254"      → store=24,  camera="FR_7-254" (число без M)
 function parseEncodingDevice(body) {
-    // Формат 1/2: є M-NN (будь-який префікс перед M-)
-    const mMatch = body.match(/Encoding Device\s*:[^\n\r]*?M-(\d+)\s+([\w][^\n\r,]*)/i);
-    if (mMatch) {
-        return { storeNumber: mMatch[1].trim(), cameraLabel: mMatch[2].trim() };
+    // Формат 1/2: M-NN  →  "M-32 FR 01", "M-6 FR 13"
+    const mDashMatch = body.match(/Encoding Device\s*:[^\n\r]*?\bM-(\d+)\s+([\w][^\n\r,]*)/i);
+    if (mDashMatch) {
+        return { storeNumber: mDashMatch[1].trim(), cameraLabel: mDashMatch[2].trim() };
     }
-    // Формат 3: NVR-ID (цифри-цифри) потім номер магазину потім камера
-    // "Encoding Device:7-254 24 FR_7-254"
+    // Формат 4: MNN-суфікс  →  "M9-1 FR", "M12-3 CAM"
+    const mNumMatch = body.match(/Encoding Device\s*:[^\n\r]*?\bM(\d+)-\d+\s+([\w][^\n\r,]*)/i);
+    if (mNumMatch) {
+        return { storeNumber: mNumMatch[1].trim(), cameraLabel: mNumMatch[2].trim() };
+    }
+    // Формат 3: NVR-ID потім число магазину  →  "7-254 24 FR_7-254"
     const nvrMatch = body.match(/Encoding Device\s*:\s*\d+-\d+\s+(\d+)\s+([\w][^\n\r,]*)/i);
     if (nvrMatch) {
         return { storeNumber: nvrMatch[1].trim(), cameraLabel: nvrMatch[2].trim() };
