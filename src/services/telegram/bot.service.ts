@@ -423,21 +423,33 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+function isRetryableServerError(err: any): boolean {
+  const code = err?.error_code ?? err?.response?.status;
+  if (code === 429 || code === 502 || code === 503 || code === 504) return true;
+  const msg = String(err?.message ?? '');
+  return /\b(429|502|503|504)\b/.test(msg) || /ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN/.test(msg);
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
   let lastErr: any;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (err: any) {
       lastErr = err;
-      const retryAfter: number = err?.parameters?.retry_after ?? err?.retry_after ?? 10;
-      if (err?.error_code === 429 || String(err?.message).includes('429')) {
-        const waitMs = (retryAfter + 1) * 1000;
-        logger.warn({ attempt, waitMs, retryAfter }, 'Telegram rate limit (429), waiting before retry');
-        await sleep(waitMs);
-      } else {
-        throw err;
-      }
+      if (!isRetryableServerError(err)) throw err;
+
+      if (attempt === maxAttempts) break;
+
+      const retryAfter: number = err?.parameters?.retry_after ?? err?.retry_after ?? 0;
+      const waitMs = retryAfter > 0
+        ? (retryAfter + 1) * 1000
+        : Math.min(1000 * 2 ** (attempt - 1), 15_000);
+      logger.warn(
+        { attempt, waitMs, errCode: err?.error_code, err: err?.message },
+        'Telegram API error, retrying',
+      );
+      await sleep(waitMs);
     }
   }
   throw lastErr;
